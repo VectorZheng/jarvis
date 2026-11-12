@@ -18,6 +18,6 @@
 2. `npx eas-cli@latest submit -p ios`
 3. App Store Connect → TestFlight → 加测试员 → 安装
 
-## Android（可选后置）
+## Android（当前主验收）
 
-`npm run android` 或后续 `eas build -p android`。工程未锁死 iOS-only。
+见 [ANDROID最短步骤.md](./ANDROID最短步骤.md) 与 [../docs/android-testing.md](../docs/android-testing.md)：`npx expo run:android`（Android Studio 模拟器 / USB 真机）。可选 `npx eas-cli@latest build -p android --profile development` 出内部 APK。
