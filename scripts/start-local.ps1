@@ -53,6 +53,6 @@ try {
     $env:REACT_NATIVE_PACKAGER_HOSTNAME = $previousHost
 }
 @{ address = $LanAddress; page = "http://${LanAddress}:8081"; backend = $backendAddress; startedAt = (Get-Date).ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot 'local-test-address.json') -Encoding UTF8
-Write-Output "iPhone 与电脑连接同一 Wi-Fi，在 Safari 打开：http://${LanAddress}:8081"
+Write-Output "手机与电脑连接同一 Wi-Fi，浏览器可打开：http://${LanAddress}:8081"
 Write-Output "后端检查地址：${backendAddress}/health"
-Write-Output '这是浏览器测试；原生 iOS 安装仍需 Mac/Xcode 或开发者会员。'
+Write-Output '这是浏览器/局域网预览。原生调试请用 Android Studio：docs/android-testing.md（模拟器 API 用 http://10.0.2.2:9301）。'

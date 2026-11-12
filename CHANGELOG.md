@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- feat(app): switch primary native debug path to Windows + Android Studio. Add `docs/android-testing.md` and `app/ANDROID最短步骤.md`. Install `expo-build-properties` and enable Android cleartext HTTP only for non-production so LAN `http://…:9301` works in AS emulator (`10.0.2.2`) and USB devices. Add `npm run android:run`, EAS `development` APK profile, and point README / start-local messaging at the Android guide.
 - fix(scripts): save `*.ps1` as UTF-8 with BOM so Windows PowerShell 5.1 does not read Chinese strings as GBK. `.gitattributes` uses `*.ps1 text eol=crlf` and does not re-encode the files (no `working-tree-encoding`).
 - fix(app): commit `app/package-lock.json` so `npm ci` works. It is generated with `npm install` from the Expo SDK ranges already in `app/package.json` (no version bumps) and is not gitignored. `scripts/start-local.ps1` says to run `npm ci` when that lockfile exists, and `npm install` when it does not.
 - feat(app): evening and late home backgrounds use dedicated plates instead of a black scrim. Dim crossfades to `jarvis-bg-dusk.png`, dark to `jarvis-bg-late.png` (artwork by Crea&Cons), and light keeps the seasonal photo. The fade is about 400ms. A missing theme stays on the light seasonal photo.

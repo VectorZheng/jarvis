@@ -16,8 +16,8 @@ React Native + Expo（managed）+ TypeScript。首期一屏竖屏 Demo：选角�
 |---|---|
 | 栈 | **React Native + Expo** managed，TypeScript |
 | 方向 | iPhone 竖屏 only（`orientation: portrait`） |
-| 预览 | 盒子上 Expo Web；真机 / 模拟器需用户 Mac |
-| 签名 | 用户 Mac + Apple Developer；盒子不能替代签名打包 |
+| 预览 | 盒子上 Expo Web；原生主路径为 Windows + Android Studio |
+| 签名 | Android 本地 debug 用 AS；正式分发可用 EAS；iOS 签名仍需用户 Mac + Apple Developer |
 | API | `EXPO_PUBLIC_API_BASE` → `POST /v1/council`；未设则本地 mock |
 
 **禁止**把 API 指到 ICT 端口 `9101` / `9102`。
@@ -54,18 +54,25 @@ EXPO_PUBLIC_API_BASE=http://127.0.0.1:9301 npx expo export --platform web
 # 产物 dist/
 ```
 
-## 在用户 Mac 上跑 iOS
+## 在 Windows 上用 Android Studio 调试（主路径）
+
+见 [../docs/android-testing.md](../docs/android-testing.md) 与 [ANDROID最短步骤.md](./ANDROID最短步骤.md)。
+
+```powershell
+cd app && npm ci
+$env:EXPO_PUBLIC_API_BASE = 'http://10.0.2.2:9301'   # 模拟器
+npx expo run:android
+```
+
+真机把地址换成电脑局域网 IP，并加 `--device`。
+
+## 在用户 Mac 上跑 iOS（非阻塞）
 
 1. 安装 Xcode、Node；可选 `npm i -g eas-cli`。
-2. 拷贝本目录到 Mac 后：
-   ```bash
-   cd app && npm install
-   npx expo start --ios
-   ```
-3. Expo Go 扫码，或 `npx expo run:ios`（需 prebuild）。
-4. **App Store / TestFlight**：必须在用户自己的 Mac 上用 Apple Developer 签名；盒子只出代码与 Web 预览。
+2. `cd app && npm install && npx expo run:ios`
+3. **App Store / TestFlight**：仍需用户 Mac + Apple Developer；盒子只出代码与 Web 预览。
 
-真机联调时把 `EXPO_PUBLIC_API_BASE` 换成 Mac/局域网可达地址（真机打不开盒子的 `127.0.0.1`）。
+真机联调时把 `EXPO_PUBLIC_API_BASE` 换成电脑局域网可达地址（真机打不开 `127.0.0.1`）。
 
 ## 脚本
 
@@ -74,7 +81,8 @@ EXPO_PUBLIC_API_BASE=http://127.0.0.1:9301 npx expo export --platform web
 | `npm start` | Expo Dev Server |
 | `npm run web` | Web 预览 |
 | `npm run ios` | iOS（需 macOS） |
-| `npm run android` | Android |
+| `npm run android` | Expo Go 预览 Android |
+| `npm run android:run` | `expo run:android`（AS 模拟器 / 真机 debug 包） |
 | `npm run export` | `expo export --platform web` |
 
 ## Demo 钩子（默认状态）

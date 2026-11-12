@@ -23,11 +23,24 @@ macOS / Linux 的前端命令：
     npm ci
     EXPO_PUBLIC_API_BASE=http://127.0.0.1:9301 npm run web -- --port 8081
 
-## Mac / iPhone 原生测试
+## Android Studio 原生调试（主路径）
 
-按 [Mac 测试指南](docs/mac-testing.md) 配置 Xcode、启动后端并运行 `npx expo run:ios --device`。模拟器使用 `127.0.0.1`，真机使用 Mac 的局域网 IP。从仓库拉取最新代码后按指南安装依赖。
+按 [Android 测试指南](docs/android-testing.md) 在 Windows 安装 Android Studio，启动后端后运行：
 
-TestFlight 分发见 [TestFlight 指南](docs/testflight.md)，需开发者账号和在线 HTTPS 后端。
+```powershell
+cd app
+npm ci
+# 模拟器 → 宿主机后端
+$env:EXPO_PUBLIC_API_BASE = 'http://10.0.2.2:9301'
+npx expo run:android
+# 真机 → 换成电脑局域网 IP
+# $env:EXPO_PUBLIC_API_BASE = 'http://192.168.x.x:9301'
+# npx expo run:android --device
+```
+
+最短步骤见 [app/ANDROID最短步骤.md](app/ANDROID最短步骤.md)。非正式构建已允许 Android 访问局域网 HTTP 后端；正式包仍要求 HTTPS。
+
+Mac / iPhone 本地调试见 [Mac 测试指南](docs/mac-testing.md)；TestFlight 见 [TestFlight 指南](docs/testflight.md)。二者不再阻塞 Android 验收。
 
 ## 真实模型
 
@@ -37,7 +50,7 @@ GET /v1/recovery/status 返回配置状态。首页通过 POST /v1/assistant/str
 
 HealthKit 和 Apple Calendar 尚未接入原生读取；演示数据有标签，手动记录的缺失字段不会由演示数值补齐。原生通知需要明确时间和用户确认，成功后取得通知 ID，可以取消；尚需 iPhone 实测，Web 预览不发送系统通知。
 
-真机预览须将 EXPO_PUBLIC_API_BASE 换成手机可访问的局域网地址。生产构建时也需要设置部署后的 API 地址。
+Android 真机须将 `EXPO_PUBLIC_API_BASE` 换成手机可访问的局域网地址；模拟器用 `http://10.0.2.2:9301`。生产构建需要部署后的 HTTPS API 地址。
 
 ## 检查
 
