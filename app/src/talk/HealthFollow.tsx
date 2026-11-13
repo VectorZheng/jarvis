@@ -8,6 +8,7 @@ import {
   blocksFromSnapshot, healthKitAvailable, persistAndMaybePost, type HealthBlock, type HealthSnapshot,
 } from './healthSnapshot';
 import { hap } from './haptics';
+import { parseManualHealth } from './healthInput';
 import { Tap } from './press';
 
 const LABEL = '#8E8E93';
@@ -67,7 +68,7 @@ export function HealthFollowPanel({ visible, follow, snapshot, reduceMotion, onS
               <Text style={st.title}>健康详情</Text>
               <Tap feedback="selection" onPress={close} hitSlop={12} pressOpacity={0.5} pressScale={1}><Text style={st.close}>收起</Text></Tap>
             </View>
-            <Text style={st.plan}>{follow.plan || (snapshot.source === 'mock' ? '演示健康数据 · 尚未连接 Apple 健康' : '当前可用记录 · 根据你的反馈调整建议')}</Text>
+            <Text style={st.plan}>{snapshot.source === 'mock' ? '示例数据，并非你的健康记录' : '当前可用记录 · 根据你的反馈调整建议'}</Text>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 28 }}>
               <View style={st.inset} testID="health-blocks">
@@ -116,8 +117,8 @@ export function HealthFollowPanel({ visible, follow, snapshot, reduceMotion, onS
                 </Tap>
               </View> : null}
               <Tap testID="btn-healthkit" feedback={false} onPress={connectHealth} style={st.hkBtn}>
-                <Text style={st.hkTitle}>Apple 健康 · 尚未接入</Text>
-                <Text style={st.hkSub}>当前可手动填写，不会模拟授权或同步</Text>
+                <Text style={st.hkTitle}>记录今天的状态</Text>
+                <Text style={st.hkSub}>健康数据自动同步尚未接入，可手动填写；留空表示未知</Text>
               </Tap>
               {!hk ? (
                 <Tap testID="btn-manual-health" feedback="selection" onPress={() => setManualOpen(true)} style={st.manualLink}>
@@ -167,10 +168,13 @@ function ManualSheet({ visible, snapshot, onClose, onSave }: {
   const [steps, setSteps] = useState(String(snapshot.steps ?? ''));
   const [meals, setMeals] = useState(String(snapshot.meals_today ?? ''));
   const [done, setDone] = useState<boolean | undefined>(snapshot.source === 'mock' ? undefined : snapshot.training_done);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
     setSleep(snapshot.source === 'mock' ? '' : String(snapshot.sleep_hours ?? ''));
+    setError('');
     setSteps(snapshot.source === 'mock' ? '' : String(snapshot.steps ?? ''));
     setMeals(snapshot.source === 'mock' ? '' : String(snapshot.meals_today ?? ''));
     setDone(snapshot.source === 'mock' ? undefined : snapshot.training_done);
@@ -184,34 +188,33 @@ function ManualSheet({ visible, snapshot, onClose, onSave }: {
           <Field label="睡眠（小时）" value={sleep} onChange={setSleep} />
           <Field label="步数" value={steps} onChange={setSteps} />
           <Field label="今日餐次" value={meals} onChange={setMeals} />
-          <Tap feedback="selection" onPress={() => setDone((d) => !d)} style={st.toggle}>
+          <Tap feedback="selection" onPress={() => setDone((d) => d === undefined ? true : d ? false : undefined)} style={st.toggle}>
             <Text style={st.rowConcl}>训练已完成</Text>
             <Text style={st.cardBtnText}>{done === undefined ? '未填写' : done ? '是' : '否'}</Text>
           </Tap>
           <Tap
             testID="btn-save-manual"
             feedback="success"
+            disabled={saving}
             style={st.cardBtn}
-            onPress={() => onSave({
-              sleep_hours: manualNumber(sleep),
-              steps: manualNumber(steps),
-              meals_today: manualNumber(meals),
-              training_done: done,
-            })}
+            onPress={async () => {
+              const parsed = parseManualHealth({ sleep, steps, meals, done });
+              if (parsed.error) { setError(parsed.error); return; }
+              setError(''); setSaving(true);
+              try { await onSave(parsed.values!); }
+              catch { setError('记录未能保存，请重试。'); }
+              finally { setSaving(false); }
+            }}
           >
-            <Text style={st.cardBtnText}>保存</Text>
+            <Text style={st.cardBtnText}>{saving ? '保存中…' : '保存'}</Text>
           </Tap>
+          {error ? <Text accessibilityLiveRegion="polite" style={{ color: '#B42318', lineHeight: 20 }}>{error}</Text> : null}
         </Tap>
       </Tap>
     </Modal>
   );
 }
 
-function manualNumber(value: string): number | undefined {
-  if (!value.trim()) return undefined;
-  const result = Number(value);
-  return Number.isFinite(result) && result >= 0 ? result : undefined;
-}
 
 function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (

@@ -79,7 +79,7 @@ export async function loadHealthSnapshot(): Promise<HealthSnapshot> {
 
 export async function saveHealthSnapshot(snap: HealthSnapshot): Promise<HealthSnapshot> {
   const next: HealthSnapshot = { ...snap, updated_at: new Date().toISOString() };
-  try { await AsyncStorage.setItem(KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  await AsyncStorage.setItem(KEY, JSON.stringify(next));
   return next;
 }
 
@@ -144,7 +144,7 @@ export function blocksFromSnapshot(st: HealthSnapshot): HealthBlock[] {
       unit: '小时',
       detail: Number.isFinite(sleep)
         ? `昨晚约 ${sleep} 小时。这条记录不能单独决定训练强度，需要结合个人历史与当前感受。`
-        : '连接 Apple 健康或手动填写后，这里会显示睡眠结论。',
+        : '手动填写睡眠记录后，可以结合当前感受讨论安排。',
     },
     {
       id: 'activity',
@@ -161,19 +161,19 @@ export function blocksFromSnapshot(st: HealthSnapshot): HealthBlock[] {
     {
       id: 'training',
       title: '训练',
-      conclusion: done ? '今日训练已完成' : '今天还没练',
-      value: done ? '1' : '0',
+      conclusion: st.training_done === undefined ? '尚未记录训练状态' : done ? '今日训练已完成' : '今日训练未完成',
+      value: st.training_done === undefined ? '—' : done ? '1' : '0',
       unit: '次',
-      detail: done ? '今天的训练已勾选完成。睡够时可回到常规力量。' : '还没完成今日训练。可以和助手结合当前感受讨论强度。',
+      detail: st.training_done === undefined ? '未记录不代表没有运动，可手动更新状态。' : '这是你记录的完成状态，是否调整训练还需结合当前感受与安排。',
     },
     {
       id: 'meals',
       title: '饮食',
-      conclusion: !Number.isFinite(meals) ? '还没记饮食' : meals === 0 ? '今天还没吃饭记录' : meals >= 4 ? '餐次已经偏多' : `已记 ${meals} 餐`,
+      conclusion: !Number.isFinite(meals) ? '还没记饮食' : `已记 ${meals} 餐`,
       value: Number.isFinite(meals) ? String(meals) : '—',
       unit: '餐',
       detail: Number.isFinite(meals)
-        ? `今天已记 ${meals} 餐。0 餐会提醒用冰箱；≥4 餐晚间不加餐。`
+        ? `今天已记 ${meals} 餐。餐次不能单独判断摄入是否足够，可结合饥饿感、食物份量与活动情况讨论。`
         : '记下餐次后，饮食秘书会按预算与冰箱调整。',
     },
   ];
