@@ -27,12 +27,13 @@ import { Tap } from '../talk/press';
 import { answerFor, FOLLOW_LABEL, type ActionId, type Answer } from './answers';
 import { GlassActionButton } from './GlassActionButton';
 import { loadHabit, recordTap, SEED } from './habits';
-import { rankActions, type Greet, type Habit, type HomeAction } from './home.mjs';
+import { rankActions, themeForPeriod, type Greet, type Habit, type HomeAction } from './home.mjs';
 import { DEFAULT_BASELINE, judge } from './nudge.mjs';
 import { dismissHome, getHome, NUDGE_TO_ACTION, tapHome, type Home, type Nudge } from './nudgeClient';
 import { HomeConversation } from './HomeConversation';
 import { createHomeDraft, HomeDraftComposer, HomeInputBar } from './HomeDraft';
-import { VoiceBubble } from './VoiceBubble';
+import { SeasonMusic } from './SeasonMusic';
+import { DragonCompanion } from './DragonCompanion';
 import { VoiceRecorder } from './VoiceRecorder';
 import { HomeArrival } from './HomeArrival';
 import { PeriodIcon } from './PeriodIcon';
@@ -89,8 +90,11 @@ export const AgentScreen = memo(function AgentScreen({ onNavigate, activeTab, ta
   const baseline = DEFAULT_BASELINE;
   const j = useMemo(() => judge(snap as Record<string, unknown>, baseline), [snap, baseline]);
   const [ranked, setRanked] = useState<HomeAction[]>(() => rankActions(SEED, MOCK_SNAPSHOT as Record<string, unknown>, new Date()));
-  const [greet, setGreet] = useState<Greet>({ primary: '下午好', secondary: null, period: 'afternoon' });
-  const [theme, setTheme] = useState<HomeTheme>(AFTERNOON_HOME_THEME);
+  const [homeGreet, setGreet] = useState<Greet>({ primary: '下午好', secondary: null, period: 'afternoon' });
+  const [homeTheme, setTheme] = useState<HomeTheme>(AFTERNOON_HOME_THEME);
+  // The device clock drives the visible greeting and chrome, including after resume.
+  const greet = { ...homeGreet, period: scene.period, primary: { morning: '早上好', afternoon: '下午好', evening: '晚上好', late: '夜深了' }[scene.period] };
+  const theme = homeTheme.period === scene.period ? homeTheme : themeForPeriod(scene.period);
   const [homeSource, setHomeSource] = useState<'pending' | Home['source']>('pending');
 
   const typingPulse = useSharedValue(0);
@@ -184,9 +188,9 @@ export const AgentScreen = memo(function AgentScreen({ onNavigate, activeTab, ta
 
   const bigFact = nudge?.facts ? Object.entries(nudge.facts).find(([, v]) => typeof v === 'number') : undefined;
 
-  const compact = homeHeight < 720;
+  const compact = homeHeight < 780;
   const typingOnShortScreen = focused && homeHeight < 600;
-  const orbSize = compact ? 64 : ORB;
+  const orbSize = compact ? 96 : 108;
   const greetingSize = typingOnShortScreen ? 28 : compact ? 42 : 54;
   const orbActive = visible && !sheetExpanded && !backgroundOpen && !detailOpen && !recoveryOpen && !voiceOpen;
 
@@ -212,16 +216,16 @@ export const AgentScreen = memo(function AgentScreen({ onNavigate, activeTab, ta
         )}
         renderBackground={(reveal, openSheet) => (
         <View style={st.screen} onLayout={measureHome}>
-          <BlurTargetView ref={homeBackdrop} style={StyleSheet.absoluteFill}><ThemeBackdrop scene={scene.scene} mode={theme.mode} reduceMotion={rm} /></BlurTargetView>
+          <BlurTargetView ref={homeBackdrop} style={StyleSheet.absoluteFill}><ThemeBackdrop scene={scene.scene} mode={theme.mode} reduceMotion={rm} active={orbActive} /></BlurTargetView>
           <View style={st.header}>
             <Text style={[st.brand, { color: onPhoto }]}>JARVIS</Text>
             <View style={st.headerActions}>
+            <SeasonMusic season={scene.season} active={visible && !voiceOpen && !recoveryOpen && !detailOpen} color={onPhoto} />
             <Tap testID="background-preset" accessibilityRole="button" accessibilityLabel="选择季节或时光背景" onPress={() => setBackgroundOpen(true)} style={st.backgroundHit}><Text style={[st.backgroundLabel, { color: onPhoto }]}>{scene.label}</Text><Ionicons name="chevron-down" size={12} color={onPhoto} /></Tap>
             <Tap onPress={() => setDetailOpen(true)} testID="agent-health" accessibilityRole="button" accessibilityLabel="查看健康详情" style={st.healthHit}><Ionicons name="heart-outline" size={20} color={onPhoto} /></Tap>
             </View>
           </View>
-          <GestureDetector gesture={reveal}>
-            <Animated.View style={[st.hero, Platform.OS === 'web' && ({ touchAction: 'pan-x' } as never)]} testID="home-hero">
+            <ScrollView style={st.hero} contentContainerStyle={st.heroContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" testID="home-hero">
               <View style={[st.greetWrap, { paddingTop: typingOnShortScreen ? 0 : compact ? 12 : 30 }]} testID="agent-greet">
                 <HomeArrival active={visible} reduceMotion={rm} style={st.greetingRow}>
                   <Text style={[st.greetPrimary, { color: theme.text, fontFamily: fontLoaded ? 'JarvisGreeting' : undefined, fontSize: greetingSize, lineHeight: greetingSize * 1.2 }]} numberOfLines={1} adjustsFontSizeToFit testID="greet-primary">{greet.primary}</Text>
@@ -231,15 +235,18 @@ export const AgentScreen = memo(function AgentScreen({ onNavigate, activeTab, ta
                 <HomeArrival active={visible} reduceMotion={rm} delay={320}><Text style={[st.quote, { color: theme.text }, typingOnShortScreen && { fontSize: 12, lineHeight: 18, paddingTop: 6 }]} numberOfLines={typingOnShortScreen ? 2 : 3} testID="home-opening-observation">{homeMessages.length ? homeMessages.at(-1)?.content : opening.observation}</Text></HomeArrival>
                 {!typingOnShortScreen ? <HomeArrival active={visible} reduceMotion={rm} delay={480}><Text style={[st.openingQuestion, { color: onPhoto }]}>{opening.question}</Text></HomeArrival> : null}
               </View>
-              <HomeArrival active={visible} reduceMotion={rm} delay={640} style={st.openingChoices}><FloatingChoices choices={homeBusy ? [] : homeChoices} disabled={homeBusy} onChoose={(value) => { void submit(openSheet, false, value); }} testIDPrefix="home-opening-choice" blurTarget={homeBackdrop} textColor={theme.text} iconColor={theme.muted} tone={theme.mode === 'light' ? 'light' : 'dark'} /></HomeArrival>
+              <HomeArrival active={visible} reduceMotion={rm} delay={640} style={st.openingChoices}><FloatingChoices scrollable={false} choices={homeBusy ? [] : homeChoices} disabled={homeBusy} onChoose={(value) => { void submit(openSheet, false, value); }} testIDPrefix="home-opening-choice" blurTarget={homeBackdrop} textColor={theme.text} iconColor={theme.muted} tone={theme.mode === 'light' ? 'light' : 'dark'} /></HomeArrival>
               <View style={[st.orbStage, { minHeight: typingOnShortScreen ? 0 : orbSize + 34, flex: typingOnShortScreen ? 0 : 1 }]}>
-                {!typingOnShortScreen ? <Tap testID="agent-orb" accessibilityRole="button" accessibilityLabel="点击水球，开始语音录音" disabled={homeBusy} onPress={() => { Keyboard.dismiss(); setVoiceOpen(true); }} style={{ alignItems: 'center', padding: 8 }}><VoiceBubble size={orbSize} active={orbActive} reduceMotion={rm} pulse={typingPulse} /><Text style={[st.orbLabel, { color: onPhoto }]}>点我，说说今天</Text></Tap> : null}
+                {!typingOnShortScreen ? <Tap testID="agent-orb" accessibilityRole="button" accessibilityLabel="和小龙娘说话，开始语音录音" disabled={homeBusy} onPress={() => { Keyboard.dismiss(); setVoiceOpen(true); }} style={{ alignItems: 'center', padding: 8 }}><DragonCompanion size={orbSize} active={orbActive} reduceMotion={rm} pulse={typingPulse} /><Text style={[st.orbLabel, { color: onPhoto }]}>我在，慢慢说</Text></Tap> : null}
               </View>
 
-            </Animated.View>
-          </GestureDetector>
-          <HomeInputBar theme={theme} draft={draft} busy={homeBusy} onChange={changeText} onFocus={focusInput} onBlur={blurInput} onSend={() => { void submit(openSheet); }} choices={[]} onChoose={(value) => { void submit(openSheet, false, value); }} blurTarget={homeBackdrop} />
-          {typingOnShortScreen ? <View style={{ height: Math.max(insets.bottom, 8) + 44 }} /> : <Text pointerEvents="none" style={[st.swipeHint, { color: onPhoto, paddingBottom: Math.max(insets.bottom, 8) + 44 }]} testID="home-swipe-hint">上滑，看看今天的安排</Text>}
+            </ScrollView>
+          <HomeArrival active={visible} reduceMotion={rm} delay={640} testID="home-input-arrival">
+            <HomeInputBar theme={theme} draft={draft} busy={homeBusy} onChange={changeText} onFocus={focusInput} onBlur={blurInput} onSend={() => { void submit(openSheet); }} choices={[]} onChoose={(value) => { void submit(openSheet, false, value); }} blurTarget={homeBackdrop} />
+          </HomeArrival>
+          <GestureDetector gesture={reveal}><View>
+            {typingOnShortScreen ? <View style={{ height: Math.max(insets.bottom, 8) + 44 }} /> : <Text pointerEvents="none" style={[st.swipeHint, { color: onPhoto, paddingBottom: Math.max(insets.bottom, 8) + 44 }]} testID="home-swipe-hint">上滑，看看今天的安排</Text>}
+          </View></GestureDetector>
         </View>
       )}>
         {homeMessages.length ? <HomeConversation theme={theme} messages={homeMessages} result={homeResult} busy={homeBusy} pending={homePending} error={homeError} onRetry={() => { void submit(undefined, true); }} onReset={() => { setHomeMessages([]); setHomeResult(null); setHomeError(''); }} /> : null}
@@ -366,14 +373,15 @@ const st = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 26, height: 48 },
   brand: { fontSize: 10, fontWeight: '500', color: '#99999F', letterSpacing: 3 },
   healthHit: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
-  hero: { flex: 1, alignItems: 'center', paddingHorizontal: 24 },
+  hero: { flex: 1 },
+  heroContent: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 24, paddingBottom: 8 },
   period: { marginBottom: 18, opacity: 0.7 },
   orbStage: { flex: 1, minHeight: ORB + 12, width: '100%', alignItems: 'center', justifyContent: 'center' },
   openingLabel: { fontSize: 10, letterSpacing: 1, paddingTop: 14 },
   openingQuestion: { fontSize: 13, lineHeight: 21, paddingTop: 10 },
   quote: { fontSize: 17, fontWeight: '400', textAlign: 'left', lineHeight: 28, paddingTop: 9 },
   greetingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 12 },
-  openingChoices: { width: '100%', marginTop: 18, flexShrink: 1 },
+  openingChoices: { width: '100%', marginTop: 18, flexShrink: 0 },
   orbLabel: { fontSize: 11, letterSpacing: 1, paddingTop: 14 },
   dots: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, paddingBottom: 16 },
   dotHit: { minWidth: 76, minHeight: 52, alignItems: 'center', justifyContent: 'center', gap: 10 },

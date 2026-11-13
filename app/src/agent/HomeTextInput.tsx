@@ -1,10 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useContext, useState } from 'react';
+import React, { useState } from 'react';
 import { Platform, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 import { Tap } from '../talk/press';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ConversationGlassContext, type GlassTarget } from '../recovery/ConversationMotion';
+import { AFTERNOON_HOME_THEME, inkOnAccent, type HomeTheme } from '../theme/homeTheme';
 import Animated, { cancelAnimation, Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 type Props = {
@@ -18,13 +17,12 @@ type Props = {
   placeholder: string;
   inputTestID: string;
   sendTestID: string;
-  blurTarget?: GlassTarget;
+  theme?: HomeTheme;
 };
 
 /** Glass stays underneath an explicit foreground so editable text remains sharp. */
-export function HomeTextInput({ value, busy, onChange, onSend, onStop, onFocus, onBlur, placeholder, inputTestID, sendTestID, blurTarget }: Props) {
-  const inheritedTarget = useContext(ConversationGlassContext);
-  const target = blurTarget || inheritedTarget;
+export function HomeTextInput({ value, busy, onChange, onSend, onStop, onFocus, onBlur, placeholder, inputTestID, sendTestID, theme = AFTERNOON_HOME_THEME }: Props) {
+  const dark = theme.mode !== 'light';
   const [height, setHeight] = useState(44);
   const focusProgress = useSharedValue(0);
   const stopping = busy && Boolean(onStop);
@@ -41,10 +39,9 @@ export function HomeTextInput({ value, busy, onChange, onSend, onStop, onFocus, 
     cancelAnimation(focusProgress);
     focusProgress.set(withTiming(next, { duration: 220, easing: Easing.out(Easing.cubic) }));
   };
-  return <View testID={inputTestID + '-surface'} style={s.surface}>
+  return <View testID={inputTestID + '-surface'} style={[s.surface, { backgroundColor: dark ? 'rgba(28,30,34,0.84)' : 'rgba(255,255,255,0.76)' }]}>
     <View pointerEvents="none" style={s.glass}>
-      <BlurView blurTarget={target} blurMethod={target ? 'dimezisBlurViewSdk31Plus' : 'none'} intensity={12} tint="light" style={s.glass} />
-      <LinearGradient colors={['rgba(255,255,255,0.38)', 'rgba(255,255,255,0.05)', 'rgba(225,235,239,0.12)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.glass} />
+      <LinearGradient colors={dark ? ['rgba(255,255,255,0.06)', 'transparent'] : ['rgba(255,255,255,0.28)', 'rgba(225,235,239,0.08)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.glass} />
     </View>
     <Animated.View pointerEvents="none" style={[s.focusOverlay, focusStyle]} />
     <View style={s.foreground}>
@@ -56,7 +53,7 @@ export function HomeTextInput({ value, busy, onChange, onSend, onStop, onFocus, 
       onFocus={() => { setFocus(1); onFocus?.(); }}
       onBlur={() => { setFocus(0); onBlur?.(); }}
       placeholder={placeholder}
-      placeholderTextColor="#72777F"
+      placeholderTextColor={dark ? '#BBC0C8' : '#606770'}
       editable={!busy}
       multiline
       numberOfLines={1}
@@ -66,10 +63,10 @@ export function HomeTextInput({ value, busy, onChange, onSend, onStop, onFocus, 
       maxLength={2000}
       textAlignVertical="top"
       underlineColorAndroid="transparent"
-      style={[s.input, Platform.OS === 'web' ? s.webInput : { height: value ? height : 44 }]}
+      style={[s.input, { color: theme.text }, Platform.OS === 'web' ? s.webInput : { height: value ? height : 44 }]}
     />
-    <Tap testID={sendTestID} accessibilityRole="button" accessibilityLabel={stopping ? '停止回复' : '发送'} feedback="light" disabled={disabled} onPress={stopping ? onStop : onSend} style={[s.send, disabled && s.disabled]}>
-      <Ionicons name={stopping ? 'stop' : 'arrow-up'} size={stopping ? 15 : 21} color={disabled ? '#9298A1' : '#FFFFFF'} />
+    <Tap testID={sendTestID} accessibilityRole="button" accessibilityLabel={stopping ? '停止回复' : '发送'} feedback="light" disabled={disabled} onPress={stopping ? onStop : onSend} style={[s.send, { backgroundColor: theme.accent }, disabled && s.disabled]}>
+      <Ionicons name={stopping ? 'stop' : 'arrow-up'} size={stopping ? 15 : 21} color={disabled ? theme.muted : inkOnAccent(theme)} />
     </Tap>
     </View>
   </View>;

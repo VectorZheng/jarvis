@@ -1,11 +1,11 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
+import React, { memo, useCallback, useEffect, useState } from 'react';
+import { AppState, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import Animated, { cancelAnimation, Easing, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import type { HomeThemeMode } from '../theme/homeTheme';
 import type { GreetPeriod } from './home.mjs';
 import { demoHour } from './nudgeClient';
+import { SeasonalAtmosphere } from './SeasonalAtmosphere';
 
 const FADE_MS = 400;
 /** Evening and late plates. Artwork by Crea&Cons. */
@@ -15,7 +15,6 @@ const LATE = require('../../assets/bg/jarvis-bg-late.png');
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
 type DayScene = 'morning' | 'afternoon' | 'evening';
 export type SeasonPreset = Season | DayScene | 'auto' | 'time';
-const KEY = 'home_season_background';
 export const SEASONS: Record<Season, { label: string; note: string }> = {
   spring: { label: '春', note: '花开有时' },
   summer: { label: '夏', note: '风过青绿' },
@@ -47,31 +46,24 @@ function clockScene() {
 export function useSeasonScene() {
   const [preset, setPreset] = useState<SeasonPreset>('auto');
   const [clock, setClock] = useState(clockScene);
-  const selected = useRef(false);
-  const writeQueue = useRef(Promise.resolve());
   useEffect(() => {
-    let mounted = true;
-    void AsyncStorage.getItem(KEY).then(value => {
-      if (mounted && !selected.current && validPreset(value)) setPreset(value);
-    }).catch(() => {});
     const refresh = () => {
       const next = clockScene();
       setClock(previous => previous.season === next.season && previous.period === next.period ? previous : next);
     };
     const timer = setInterval(refresh, 60000);
     const sub = AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
-    return () => { mounted = false; clearInterval(timer); sub.remove(); };
+    if (Platform.OS === 'web') document.addEventListener('visibilitychange', refresh);
+    return () => { clearInterval(timer); sub.remove(); if (Platform.OS === 'web') document.removeEventListener('visibilitychange', refresh); };
   }, []);
   const select = useCallback((next: SeasonPreset) => {
-    selected.current = true;
-    setPreset(next);
-    // Preserve the last selection even if the user taps several presets quickly.
-    writeQueue.current = writeQueue.current.then(() => AsyncStorage.setItem(KEY, next)).catch(() => {});
+    // Manual preview lasts for this session; a fresh app launch follows the device date.
+    if (validPreset(next)) setPreset(next);
   }, []);
   const scene = preset === 'auto' ? clock.season : preset === 'time' ? clock.period === 'late' ? 'evening' : clock.period : preset;
   const palette = SCENES[scene];
   return {
-    preset, scene, period: clock.period, select,
+    preset, scene, season: Object.hasOwn(SEASONS, scene) ? scene as Season : clock.season, period: clock.period, select,
     label: preset === 'auto' ? `${SEASONS[clock.season].label} · ${PERIOD_LABELS[clock.period]}` : preset === 'time' ? PERIOD_LABELS[clock.period] : palette.label,
     foreground: palette.dark ? '#FAF8F4' : '#3E403E',
     secondary: palette.dark ? '#E6EBF1' : '#676860',
@@ -87,7 +79,7 @@ function fadePlate(value: SharedValue<number>, to: number, reduceMotion: boolean
  * Light keeps the seasonal photo. Dim crossfades to the dusk plate, dark to the late plate.
  * Missing theme is the afternoon light preset, so it stays on the seasonal photo.
  */
-export const ThemeBackdrop = memo(function ThemeBackdrop({ scene, mode, reduceMotion }: { scene: Season | DayScene; mode: HomeThemeMode; reduceMotion: boolean }) {
+export const ThemeBackdrop = memo(function ThemeBackdrop({ scene, mode, reduceMotion, active = true }: { scene: Season | DayScene; mode: HomeThemeMode; reduceMotion: boolean; active?: boolean }) {
   const seasonOpacity = useSharedValue(mode === 'light' ? 1 : 0);
   const duskOpacity = useSharedValue(mode === 'dim' ? 1 : 0);
   const lateOpacity = useSharedValue(mode === 'dark' ? 1 : 0);
@@ -109,6 +101,7 @@ export const ThemeBackdrop = memo(function ThemeBackdrop({ scene, mode, reduceMo
     <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, lateStyle]} testID="theme-bg-late">
       <Image source={LATE} resizeMode="cover" fadeDuration={0} style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]} accessibilityLabel="夜深背景，Crea&Cons" />
     </Animated.View>
+    <SeasonalAtmosphere season={Object.hasOwn(SEASONS, scene) ? scene as Season : seasonForMonth(new Date().getMonth())} active={active} reduceMotion={reduceMotion} dark={mode !== 'light'} />
   </View>;
 });
 

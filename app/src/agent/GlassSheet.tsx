@@ -124,13 +124,17 @@ export function GlassSheet({ reduceMotion, active = true, onExpandedChange, rend
   const pan = useMemo(() => makePan(false), [makePan]);
   const dark = theme.mode !== 'light';
   const sheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: travel * (1 - progress.get()) }] }));
+  const tintStyle = useAnimatedStyle(() => {
+    const openness = Math.max(0, Math.min(1, progress.get()));
+    return { backgroundColor: dark ? `rgba(24,26,30,${openness * 0.78})` : `rgba(255,255,255,${openness * 0.6})` };
+  });
   const shadeStyle = useAnimatedStyle(() => ({ opacity: Math.max(0, Math.min(1, progress.get())) * 0.12 }));
   const backgroundStyle = useAnimatedStyle(() => ({
     transform: [{ scale: reduceMotion ? 1 : 1 - Math.max(0, Math.min(1, progress.get())) * 0.025 }],
   }));
 
   return (
-    <View style={st.root} onLayout={measureHeight}>
+    <View style={[st.root, Platform.OS === 'web' && ({ overflow: 'clip' } as never)]} onLayout={measureHeight}>
       <BlurTargetView ref={blurTarget} style={st.fill}>
         <Animated.View ref={backgroundRef} style={[st.fill, backgroundStyle]} accessibilityElementsHidden={expanded} importantForAccessibility={expanded ? 'no-hide-descendants' : 'auto'}>
           {renderBackground(reveal, open)}
@@ -139,10 +143,10 @@ export function GlassSheet({ reduceMotion, active = true, onExpandedChange, rend
       <Animated.View accessibilityElementsHidden={!expanded} importantForAccessibility={expanded ? 'auto' : 'no-hide-descendants'} pointerEvents={expanded ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, st.shade, shadeStyle]}>
         <Pressable style={st.fill} onPress={close} accessibilityRole="button" accessibilityLabel="收起详情" testID="home-sheet-backdrop" tabIndex={expanded ? 0 : -1} />
       </Animated.View>
-      <Animated.View style={[st.sheet, { height: sheetHeight, backgroundColor: expanded ? 'transparent' : theme.background }, sheetStyle]} testID="home-sheet">
+      <Animated.View style={[st.sheet, { height: sheetHeight }, sheetStyle]} testID="home-sheet">
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          {expanded && active ? <BlurView blurTarget={blurTarget} blurMethod="dimezisBlurViewSdk31Plus" intensity={70} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} testID="home-sheet-glass" /> : null}
-          <View style={[StyleSheet.absoluteFill, st.tint, dark ? { backgroundColor: theme.mode === 'dim' ? 'rgba(44,44,46,0.78)' : 'rgba(0,0,0,0.78)', borderColor: 'rgba(255,255,255,0.12)' } : null]} />
+          {expanded && active ? <BlurView blurTarget={blurTarget} blurMethod="dimezisBlurViewSdk31Plus" intensity={24} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} testID="home-sheet-glass" /> : null}
+          <Animated.View style={[StyleSheet.absoluteFill, st.tint, tintStyle]} />
         </View>
         <GestureDetector gesture={pan}>
           <Animated.View testID="home-sheet-drag" onLayout={(event) => { const next = Math.round(event.nativeEvent.layout.height); setHeaderHeight(previous => Math.abs(previous - next) > 1 ? next : previous); }} style={[st.dragArea, Platform.OS === 'web' && ({ touchAction: 'none' } as never)]}>
@@ -157,7 +161,7 @@ export function GlassSheet({ reduceMotion, active = true, onExpandedChange, rend
             </View>
           </Animated.View>
         </GestureDetector>
-        <View ref={contentRef} style={st.fill} pointerEvents={expanded ? 'auto' : 'none'} accessibilityElementsHidden={!expanded} importantForAccessibility={expanded ? 'auto' : 'no-hide-descendants'}>
+        <View ref={contentRef} style={[st.fill, st.foreground]} pointerEvents={expanded ? 'auto' : 'none'} accessibilityElementsHidden={!expanded} importantForAccessibility={expanded ? 'auto' : 'no-hide-descendants'}>
           <BlurTargetView ref={footerBlurTarget} style={st.fill}>
             <ScrollView ref={scrollRef} style={st.fill} contentContainerStyle={[st.content, { paddingBottom: 24 + footerHeight }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" testID="home-sheet-content">
               <View onLayout={(event) => { const next = Math.round(event.nativeEvent.layout.height); setContentHeight(previous => previous === null || Math.abs(previous - next) > 1 ? next : previous); }}>
@@ -180,9 +184,10 @@ const st = StyleSheet.create({
   root: { flex: 1, overflow: 'hidden' },
   fill: { flex: 1 },
   shade: { backgroundColor: '#24242A' },
-  sheet: { position: 'absolute', left: 8, right: 8, bottom: 0, borderTopLeftRadius: 32, borderTopRightRadius: 32, overflow: 'hidden', backgroundColor: '#FAFAFC' },
-  tint: { backgroundColor: 'rgba(255,255,255,0.38)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.82)', borderTopLeftRadius: 32, borderTopRightRadius: 32 },
-  dragArea: { paddingHorizontal: 22 },
+  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden', backgroundColor: 'transparent' },
+  tint: { borderTopWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.18)', borderTopLeftRadius: 28, borderTopRightRadius: 28 },
+  foreground: { zIndex: 1 },
+  dragArea: { paddingHorizontal: 22, zIndex: 1 },
   handleHit: { height: PEEK, alignItems: 'center', justifyContent: 'center' },
   handle: { width: 34, height: 4, borderRadius: 2, backgroundColor: '#C5C5CA' },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 22 },

@@ -3,7 +3,7 @@ import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioPlayer, useAu
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Tap } from '../talk/press';
-import { VoiceBubble } from './VoiceBubble';
+import { DragonCompanion } from './DragonCompanion';
 import { useReduceMotion } from '../talk/Drops';
 import { useSharedValue } from 'react-native-reanimated';
 
@@ -98,7 +98,7 @@ export function VoiceRecorder({ visible, onClose }: { visible: boolean; onClose:
       <View style={s.panel}>
         <Tap style={s.close} onPress={close} accessibilityLabel="关闭录音"><Ionicons name="close" size={22} color="#515B59" /></Tap>
         <Text style={s.title}>和 Jarvis 说说</Text>
-        <View style={s.orb}><VoiceBubble size={128} active={visible && status.isRecording} reduceMotion={reduced} pulse={pulse} /></View>
+        <View style={s.orb}><DragonCompanion size={112} active={visible && status.isRecording} reduceMotion={reduced} pulse={pulse} /></View>
         <Text style={s.state} testID="voice-recording-state">{error || (busy ? '正在准备麦克风…' : status.isRecording ? recordingLabel : uri ? '录好了，可以试听' : '点击下方开始录音')}</Text>
         <Text style={s.note}>当前仅支持录音与试听，语音转文字尚未接通。</Text>
         <View style={s.actions}>

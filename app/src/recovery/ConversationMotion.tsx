@@ -14,7 +14,7 @@ export function FlowSurface({ children, style, delay = 0, testID, blurTarget, an
   const inheritedTarget = useContext(ConversationGlassContext);
   const target = blurTarget || inheritedTarget;
   const dark = tone === 'dark';
-  return <Animated.View testID={testID} style={[s.surface, dark && s.darkSurface, style]} entering={reduced || !animate ? undefined : FadeInDown.duration(300).springify().damping(24).stiffness(220).mass(0.8).delay(delay)} layout={reduced ? undefined : LinearTransition.springify().damping(28).stiffness(260)}>
+  return <Animated.View testID={testID} style={[s.surface, dark && s.darkSurface, style]} entering={reduced || !animate ? undefined : FadeInDown.duration(300).springify().damping(24).stiffness(220).mass(0.8).delay(delay)} layout={reduced || !animate ? undefined : LinearTransition.springify().damping(28).stiffness(260)}>
     <BlurView pointerEvents="none" blurTarget={target} blurMethod={target ? 'dimezisBlurViewSdk31Plus' : 'none'} intensity={blurIntensity} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
     <LinearGradient pointerEvents="none" colors={dark ? ['rgba(255,255,255,0.08)', 'rgba(0,0,0,0.28)', 'rgba(0,0,0,0.48)'] : ['rgba(255,255,255,0.42)', 'rgba(255,255,255,0.08)', 'rgba(231,239,232,0.16)']} start={{x:0,y:0}} end={{x:1,y:1}} style={StyleSheet.absoluteFill} />
     {children}

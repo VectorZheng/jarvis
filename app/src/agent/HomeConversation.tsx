@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Tap } from '../talk/press';
 import { ConversationOrb, FlowSurface, FlowText, type GlassTarget } from '../recovery/ConversationMotion';
 import type { Message } from '../recovery/types';
 import type { AssistantReply } from '../recovery/client';
 import { FloatingChoices } from '../recovery/FloatingChoices';
-import { inkOnAccent, themeHairline, type HomeTheme } from '../theme/homeTheme';
+import { themeHairline, type HomeTheme } from '../theme/homeTheme';
+import { HomeTextInput } from './HomeTextInput';
 const TOPICS = { general: '一起聊聊', sleep: '睡眠与恢复', fitness: '运动与训练', diet: '饮食安排', budget: '预算与开销' };
 export function HomeConversation({ messages, result, busy, pending, error, onRetry, onReset, theme }: { messages: Message[]; result: AssistantReply | null; busy: boolean; pending: string; error: string; onRetry: () => void; onReset: () => void; theme: HomeTheme }) {
   const hairline = themeHairline(theme);
@@ -24,7 +25,7 @@ export function HomeComposer({ input, busy, onChange, onSend, onStop, choices, o
   const tone = dark ? 'dark' : 'light';
   return <View style={s.dock} testID="home-conversation-dock">
     <FloatingChoices choices={busy ? [] : choices} onChoose={onChoose} disabled={busy} testIDPrefix="home-quick" blurTarget={blurTarget} textColor={theme.text} iconColor={theme.muted} tone={tone} />
-    <FlowSurface tone={tone} style={[s.composer, { backgroundColor: dark ? theme.surface : 'rgba(255,255,255,0.26)', borderColor: themeHairline(theme) }]} blurTarget={blurTarget} animate={false}><ConversationOrb active={busy} input={input} /><TextInput testID="home-conversation-input" value={input} onChangeText={onChange} editable={!busy} style={[s.input, { color: theme.text }]} placeholder="也可以说说你的想法…" placeholderTextColor={theme.muted} maxLength={2000} returnKeyType="send" onSubmitEditing={onSend} /><Tap style={[s.send, { backgroundColor: theme.accent }, !busy && !input.trim() && { opacity: 0.2 }]} disabled={!busy && !input.trim()} onPress={busy ? onStop : onSend} testID="home-conversation-send" accessibilityLabel={busy ? '停止回复' : '发送'}><Ionicons name={busy ? 'stop' : 'arrow-up'} size={busy ? 14 : 19} color={inkOnAccent(theme)} /></Tap></FlowSurface>
+    <HomeTextInput theme={theme} value={input} busy={busy} onChange={onChange} onSend={onSend} onStop={onStop} placeholder="也可以说说你的想法…" inputTestID="home-conversation-input" sendTestID="home-conversation-send" />
   </View>;
 }
 const s=StyleSheet.create({ conversation:{gap:16,paddingBottom:20},heading:{flexDirection:'row',alignItems:'center',justifyContent:'space-between'},topic:{fontSize:13,color:'#86868B'},reset:{width:44,height:44,alignItems:'center',justifyContent:'center'},user:{alignSelf:'flex-end',maxWidth:'92%',backgroundColor:'rgba(227,236,228,0.42)',padding:14,borderRadius:20,borderBottomRightRadius:5},userText:{fontSize:14,lineHeight:22,color:'#1D1D1F'},reply:{gap:5,padding:17,borderBottomLeftRadius:7},text:{fontSize:16,lineHeight:27,color:'#1D1D1F'},status:{flexDirection:'row',alignItems:'center'},meta:{fontSize:12,lineHeight:20,color:'#86868B'},card:{backgroundColor:'rgba(255,255,255,0.26)',padding:18,borderRadius:22,gap:12,borderWidth:0.5,borderColor:'#FFFFFF'},cardTitle:{fontSize:16,fontWeight:'600',color:'#1D1D1F'},row:{flexDirection:'row',gap:14},value:{flex:1,fontSize:14,lineHeight:22,color:'#1D1D1F'},retry:{minHeight:44,justifyContent:'center'},dock:{marginHorizontal:18,marginTop:10,marginBottom:4},composer:{flexDirection:'row',alignItems:'center',padding:5,paddingLeft:3,borderRadius:30,backgroundColor:'rgba(255,255,255,0.26)',borderWidth:0.5,borderColor:'#FFFFFF',minHeight:54},input:{flex:1,minWidth:0,minHeight:44,fontSize:14,color:'#1D1D1F'},send:{width:42,height:42,borderRadius:24,backgroundColor:'#1D1D1F',alignItems:'center',justifyContent:'center'}});
