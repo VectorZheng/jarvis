@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { wantLine, sayLine, revisedLine } from "../skills/rules/lines.mjs";
 import { proposeFollow } from "../skills/rules/follow.mjs";
 import { bossAck, bossAsk, bossLine, bossRefuse } from "../skills/rules/boss.mjs";
-import { polishSay, polishBoss, llmStatus } from "./llm.mjs";
+import { polishSay } from "./llm.mjs";
 import { loadSnapshot, mergeState } from "./health.mjs";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -24,15 +24,7 @@ const KW = [
   ["ledger", /钱|预算|花|记账|省/],
 ];
 const FORBID = /诊断|药|减重|减肥\d|炒股|理财|投资|贷款/;
-const META_ACK = /产品|技术|研发|工程师|开会/;
 const CLARIFY_Q = "能再说具体一点吗？今晚是想睡觉、动一动，还是吃点啥？";
-function sanitizeBossLine(line, fallback) {
-  const s = String(line || "").trim();
-  if (!s || META_ACK.test(s)) return fallback;
-  return s;
-}
-
-
 function fallbackSplit(text) {
   const segs = text.split(/然后|顺便|还有|另外|，|,|。|；|;/).map((s) => s.trim()).filter(Boolean);
   const tasks = [];
@@ -134,16 +126,9 @@ export async function runTalk(res, body, deps) {
   const liveForAck = raw.filter((t) => ["fitness", "diet", "recovery", "ledger"].includes(t.intent));
   const ackRoles = [...new Set(liveForAck.flatMap((t) => (t.intent === "fitness" ? ["fitness", "recovery"] : [t.intent])))];
   {
+    // First feedback is always local. Remote wording must never hold the stream open.
     const draftAck = bossAck(ackRoles);
-    let line = draftAck;
-    let source = "rule";
-    // Only polish when real specialists are joining — empty ack must not invent「产品/技术」.
-    if (ackRoles.length) {
-      const polished = await polishBoss({ kind: "ack", draft: draftAck, context: { roles: ackRoles } });
-      line = sanitizeBossLine(polished.line, draftAck);
-      source = line === draftAck ? "rule" : polished.source;
-    }
-    emit("boss.ack", { line, roles: ackRoles, speaker: "boss", source });
+    emit("boss.ack", { line: draftAck, roles: ackRoles, speaker: "boss", source: "local_draft" });
   }
   await sleep(pace);
 
@@ -189,6 +174,8 @@ export async function runTalk(res, body, deps) {
   }
 
   let ok = 0, failed = 0;
+  // Revisions get at most 800ms, but never delay the draft line or first card.
+  const polishJobs = [];
   const rolesOf = (t) => (t.intent === "fitness" ? ["fitness", "recovery"] : [t.intent]);
   const live = raw.filter((t) => ["fitness", "diet", "recovery", "ledger"].includes(t.intent));
   // phase 1: every role.join first, so the split shows all droplets at once
@@ -224,19 +211,40 @@ export async function runTalk(res, body, deps) {
     const lines = {};
     const taskVetoes = (card?.vetoes_applied || []).filter((v) => roles.includes(v.to) && roles.includes(v.from));
     const vetoTargets = new Set(taskVetoes.map((v) => v.to));
-    const say = async (role, short, full, marked, source) => {
+    const say = (role, short, full, marked) => {
       const line_id = randomUUID().slice(0, 8);
       lines[role] = line_id;
-      const chunks = short.match(/.{1,6}/gu) || [short];
-      for (let i = 0; i < chunks.length; i++) {
-        if (stop()) return null;
-        const payload = { task_id: t.task_id, role, line_id, delta: chunks[i], done: i === chunks.length - 1, short };
-        if (i === chunks.length - 1 && full) payload.full = full;
-        if (marked) payload.phase = marked; // "want" | "revised"
-        if (i === chunks.length - 1 && source) payload.source = source;
-        emit("role.say", payload);
-        await sleep(pace / 3);
-      }
+      if (stop()) return null;
+      // A later polish updates this exact line_id, so it never creates a second draft row.
+      emit("role.say", {
+        task_id: t.task_id,
+        role,
+        line_id,
+        delta: short,
+        done: true,
+        short,
+        full,
+        phase: marked,
+        source: "local_draft",
+      });
+      polishJobs.push(
+        polishSay({ role, phase: marked || "say", draftShort: short, draftFull: full, state, timeoutMs: 800 })
+          .then((polished) => {
+            if (s.cancelled || polished?.source !== "llm" || polished.short === short) return;
+            emit("role.say", {
+              task_id: t.task_id,
+              role,
+              line_id,
+              delta: polished.short,
+              done: true,
+              short: polished.short,
+              full: polished.full || full,
+              phase: marked,
+              source: "llm_revision",
+            });
+          })
+          .catch(() => {}),
+      );
       return line_id;
     };
     // 1) 原主张（会被否决的角色先说「想要」版，避免划掉的就是结论）
@@ -244,8 +252,7 @@ export async function runTalk(res, body, deps) {
       if (!vetoTargets.has(r)) continue;
       const want = wantLine(r, state);
       if (!want) continue;
-      const p = await polishSay({ role: r, phase: "want", draftShort: want.short, draftFull: want.full, state });
-      await say(r, p.short, p.full || want.full, "want", p.source);
+      say(r, want.short, want.full, "want");
     }
     // 2) 其他角色正常说（含 recovery）
     for (const r of roles) {
@@ -253,8 +260,7 @@ export async function runTalk(res, body, deps) {
       const h = card?.handoffs.find((x) => x.role === r);
       if (!h) continue;
       const draft = sayLine(r, h.action, state);
-      const p = await polishSay({ role: r, phase: "say", draftShort: draft, draftFull: h.action, state });
-      await say(r, p.short, p.full || h.action, null, p.source);
+      say(r, draft, h.action, null);
     }
     // 3) 否决：划掉「想要」那一行
     for (const v of taskVetoes) {
@@ -266,8 +272,7 @@ export async function runTalk(res, body, deps) {
       const h = card?.handoffs.find((x) => x.role === v.to);
       if (!h) continue;
       const draft = revisedLine(v.to, h.action, state);
-      const p = await polishSay({ role: v.to, phase: "revised", draftShort: draft, draftFull: h.action, state });
-      await say(v.to, p.short, p.full || h.action, "revised", p.source);
+      say(v.to, draft, h.action, "revised");
     }
     for (const a of card?.learned_applied || []) {
       if (roles.includes(a.role)) emit("habit.applied", { task_id: t.task_id, rule_id: a.id, text: `按你的习惯改了：${a.text}` });
@@ -276,10 +281,8 @@ export async function runTalk(res, body, deps) {
     if (state?._defaulted && sub) { sub.defaulted = true; sub.disclaimer += "；用了默认值"; }
     if (sub) {
       sub.speaker = "boss";
-      const draftLine = bossLine(sub.headline);
-      const polished = await polishBoss({ kind: "line", draft: draftLine, context: { headline: sub.headline, intent: t.intent } });
-      sub.boss_line = polished.line;
-      sub.boss_line_source = polished.source;
+      sub.boss_line = bossLine(sub.headline);
+      sub.boss_line_source = "local_draft";
     }
     emit("card.ready", { task_id: t.task_id, card: sub, speaker: "boss" });
     emit("task.done", { task_id: t.task_id, status: state?._defaulted ? "degraded" : "ok" });
@@ -306,6 +309,8 @@ export async function runTalk(res, body, deps) {
       }
     }
   }
+  await Promise.allSettled(polishJobs);
+  if (stop()) return;
   emit("done", { tasks_ok: ok, tasks_failed: failed });
   res.end();
   setTimeout(() => sessions.delete(session_id), 10 * 60 * 1000);

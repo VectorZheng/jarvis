@@ -39,51 +39,6 @@ function useTalkSession() {
 }
 
 /** 纪要逐字：上一行流完再开始；积压超 3 行整行直出 */
-function useTypewriter(lines: Line[], frozen: boolean) {
-  const [cur, setCur] = useState(0);
-  const [chars, setChars] = useState(0);
-  useEffect(() => {
-    if (lines.length === 0) {
-      setCur(0);
-      setChars(0);
-    }
-  }, [lines.length === 0]);
-  useEffect(() => {
-    if (frozen) {
-      setCur(lines.length);
-      return;
-    }
-    if (cur >= lines.length) return;
-    const l = lines[cur];
-    if (lines.length - cur > 3) {
-      setCur((c) => c + 1);
-      setChars(0);
-      return;
-    }
-    if (l.kind !== 'say') {
-      if (chars === 0) {
-        setChars(l.text.length);
-        return;
-      }
-      const t = setTimeout(() => {
-        setCur((c) => c + 1);
-        setChars(0);
-      }, l.kind === 'reason' ? 900 : l.kind === 'boss' ? 700 : 280);
-      return () => clearTimeout(t);
-    }
-    if (chars < l.text.length) {
-      const t = setTimeout(() => setChars((c) => c + 2), 30);
-      return () => clearTimeout(t);
-    }
-    if (l.done) {
-      setCur((c) => c + 1);
-      setChars(0);
-    }
-  }, [lines, cur, chars, frozen]);
-  const f = (i: number) => (i < cur ? -1 : i === cur ? chars : 0);
-  return Object.assign(f, { cur });
-}
-
 export function TalkScreen({ onOpenClassic }: { onOpenClassic?: () => void } = {}) {
   const session = useTalkSession();
   const s = session.s;
@@ -93,7 +48,7 @@ export function TalkScreen({ onOpenClassic }: { onOpenClassic?: () => void } = {
   const [srcLocal, setSrcLocal] = useState(session.src);
   const rm = useReduceMotion();
   const scroll = useRef<ScrollView>(null);
-  const shown = useTypewriter(s.lines, s.phase === 'stopped');
+  const input = useRef<TextInput>(null);
   const drops = useMemo(() => layoutDrops(s.drops, width), [s.drops, width]);
   const open = session.minutesOpen;
   const scrollToVeto = useCallback(() => {
@@ -109,7 +64,7 @@ export function TalkScreen({ onOpenClassic }: { onOpenClassic?: () => void } = {
     setTimeout(go, 220);
   }, []);
   const [info, setInfo] = useState('');
-  const curLine = s.lines[shown.cur];
+  const curLine = [...s.lines].reverse().find((line) => line.kind === 'say');
   const speaking =
     s.phase === 'running' && curLine?.kind === 'say' && curLine.role !== 'jarvis'
       ? `${curLine.task_id}:${curLine.role}`
@@ -177,7 +132,7 @@ export function TalkScreen({ onOpenClassic }: { onOpenClassic?: () => void } = {
     });
     return () => sub.remove();
   }, [swapQuote]);
-  const visibleCards = s.cards.filter((c) => c.afterLine <= shown.cur);
+  const visibleCards = s.cards;
   const landed = new Set(visibleCards.map((c) => c.task_id));
   const folded = s.lines.filter(
     (l) =>
@@ -247,6 +202,7 @@ export function TalkScreen({ onOpenClassic }: { onOpenClassic?: () => void } = {
     hap.selection();
     setTalkDraft(chip);
     setLevel((x) => x + 1);
+    requestAnimationFrame(() => input.current?.focus());
   }, []);
 
   const running = s.phase === 'running' || s.phase === 'asking' || s.phase === 'listening';
@@ -395,7 +351,7 @@ export function TalkScreen({ onOpenClassic }: { onOpenClassic?: () => void } = {
             style={st.fold}
           >
             <Text style={type.subhead}>
-              会议纪要 · {nSay} 句 · {nVeto} 次否决
+              查看详情 · {nSay} 句 · {nVeto} 项建议调整
             </Text>
             <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.text3} />
           </Tap>
@@ -406,7 +362,7 @@ export function TalkScreen({ onOpenClassic }: { onOpenClassic?: () => void } = {
                 l.struck ? 'veto-want' : l.kind === 'reason' ? 'veto-reason' : l.phase === 'revised' ? 'veto-revised' : undefined;
               return (
                 <View key={l.id} testID={tid} nativeID={tid}>
-                  <MinuteLine l={l} />
+                  <FadingMinuteLine l={l} />
                 </View>
               );
             })
@@ -414,12 +370,10 @@ export function TalkScreen({ onOpenClassic }: { onOpenClassic?: () => void } = {
         {s.lines.length > folded.length ? (
           <Text style={[st.section, folded.length ? { marginTop: space.md } : null]}>头头 · 主持</Text>
         ) : null}
-        {s.lines.map((l, i) => {
-          if (foldedIds.has(l.id)) return null;
-          const n = shown(i);
-          return n === 0 ? null : <MinuteLine key={l.id} l={n < 0 ? l : { ...l, text: l.text.slice(0, n) }} />;
-        })}
-        {visibleCards.length ? <Text style={[st.section, { marginTop: space.lg }]}>头头结论</Text> : null}
+        {s.lines.map((l) => (
+          foldedIds.has(l.id) ? null : <FadingMinuteLine key={l.id} l={l} />
+        ))}
+        {visibleCards.length ? <Text style={[st.section, { marginTop: space.lg }]}>给你的建议</Text> : null}
         {visibleCards.map((c) => (
           <ResultCard key={c.task_id} c={c} />
         ))}
@@ -449,6 +403,7 @@ export function TalkScreen({ onOpenClassic }: { onOpenClassic?: () => void } = {
         {/* P0：麦克风未实现，图标直接隐藏 */}
         <TextInput
           testID="talk-input"
+          ref={input}
           value={text}
           onChangeText={(v) => {
             setTalkDraft(v);
@@ -462,6 +417,7 @@ export function TalkScreen({ onOpenClassic }: { onOpenClassic?: () => void } = {
           returnKeyType="send"
           multiline
           maxLength={500}
+          scrollEnabled
           blurOnSubmit={false}
         />
         {running ? (
@@ -521,6 +477,18 @@ function RoleGlyph({ role, size, color }: { role?: string; size: number; color: 
   if (role === 'jarvis') return <Ionicons name="diamond" size={size} color={color} />;
   if (role === 'fitness') return <Ionicons name="barbell" size={size} color={color} />;
   return <MaterialCommunityIcons name={roleIcon(role ?? '') as never} size={size} color={color} />;
+}
+
+function FadingMinuteLine({ l }: { l: Line }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+  }, [opacity]);
+  return (
+    <Animated.View style={{ opacity }}>
+      <MinuteLine l={l} />
+    </Animated.View>
+  );
 }
 
 function MinuteLine({ l }: { l: Line }) {
@@ -703,7 +671,8 @@ const st = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 6,
     lineHeight: 20,
-    maxHeight: 96,
+    maxHeight: 120,
+    textAlignVertical: 'top',
   },
   send: {
     width: 30,

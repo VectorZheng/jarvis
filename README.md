@@ -44,19 +44,12 @@ macOS / Linux 的前端命令：
 上架使用的 AAB 构建。首次构建需要登录项目所属的 Expo 账户并完成 Android
 签名配置。
 
-## Mac / iPhone 原生测试
-
-按 [Mac 测试指南](docs/mac-testing.md) 配置 Xcode、启动后端并运行 `npx expo run:ios --device`。模拟器使用 `127.0.0.1`，真机使用 Mac 的局域网 IP。从仓库拉取最新代码后按指南安装依赖。
-
-TestFlight 分发见 [TestFlight 指南](docs/testflight.md)，需开发者账号和在线 HTTPS 后端。
-
 ## 真实模型
 
 仅使用演示不需要模型密钥。启用真实对话时，将 server/.env.example 复制为 server/.env，填写 DEEPSEEK_API_KEY，并核对账户支持的模型和服务地址，再重启后端。密钥只留在后端。
 
 GET /v1/recovery/status 返回配置状态。首页通过 POST /v1/assistant/stream 理解意图并流式回答，明确的睡眠问题才转入睡眠。POST /v1/recovery/stream 流式生成睡眠回复，完整输出校验后再展示卡片；POST /v1/recovery/talk 保留为兼容接口。未配置或失败会明确显示错误，保留消息供重试。
 
-HealthKit 和 Apple Calendar 尚未接入原生读取；演示数据有标签，手动记录的缺失字段不会由演示数值补齐。原生通知需要明确时间和用户确认，成功后取得通知 ID，可以取消；尚需 iPhone 实测，Web 预览不发送系统通知。
 
 真机预览须将 EXPO_PUBLIC_API_BASE 换成手机可访问的局域网地址。生产构建时也需要设置部署后的 API 地址。
 

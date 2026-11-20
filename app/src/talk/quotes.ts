@@ -15,7 +15,7 @@ export const BOSS_QUOTES: readonly string[] = [
 ];
 
 /** Meeting-state replacement (or hide entirely). */
-export const MEETING_LINE = '我去开会';
+export const MEETING_LINE = '正在整理你的安排';
 
 export function pickQuote(exclude?: string): string {
   const pool = exclude ? BOSS_QUOTES.filter((q) => q !== exclude) : BOSS_QUOTES;

@@ -10,7 +10,6 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.jarvis.secretary",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "换头头形象时需要访问相册",
         "NSLocalNetworkUsageDescription": "连接同一网络中的电脑，获取对话回复和测试服务。",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true

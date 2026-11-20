@@ -153,7 +153,7 @@ export async function chat({ system, user, json = false, timeoutMs = 12000, requ
  * Polish a meeting short line. Falls back to draft on any failure.
  * @returns {Promise<{short:string, full?:string, source:"llm"|"rule"}>}
  */
-export async function polishSay({ role, phase, draftShort, draftFull, state = {} }) {
+export async function polishSay({ role, phase, draftShort, draftFull, state = {}, timeoutMs = 10000 }) {
   const fallback = {
     short: draftShort,
     full: draftFull,
@@ -179,7 +179,7 @@ export async function polishSay({ role, phase, draftShort, draftFull, state = {}
       state: st,
     }),
     json: false,
-    timeoutMs: 10000,
+    timeoutMs,
   });
   if (!raw || typeof raw !== "string") return fallback;
   let out = null;

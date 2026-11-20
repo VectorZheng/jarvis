@@ -1,4 +1,4 @@
-# 随身助手 / 秘书团 · iOS Demo（Expo）
+# Jarvis Android Demo (Expo)
 
 React Native + Expo（managed）+ TypeScript。首期一屏竖屏 Demo：选角色 → 今日状态 → 一张「交接班」建议卡。
 
@@ -54,18 +54,9 @@ EXPO_PUBLIC_API_BASE=http://127.0.0.1:9301 npx expo export --platform web
 # 产物 dist/
 ```
 
-## 在用户 Mac 上跑 iOS
+## Android development
 
-1. 安装 Xcode、Node；可选 `npm i -g eas-cli`。
-2. 拷贝本目录到 Mac 后：
-   ```bash
-   cd app && npm install
-   npx expo start --ios
-   ```
-3. Expo Go 扫码，或 `npx expo run:ios`（需 prebuild）。
-4. **App Store / TestFlight**：必须在用户自己的 Mac 上用 Apple Developer 签名；盒子只出代码与 Web 预览。
-
-真机联调时把 `EXPO_PUBLIC_API_BASE` 换成 Mac/局域网可达地址（真机打不开盒子的 `127.0.0.1`）。
+Use `npm run android` on an Android emulator or USB-debugging device. Set `EXPO_PUBLIC_API_BASE` to a host the device can reach; an Android emulator can use `http://10.0.2.2:9301`.
 
 ## 脚本
 
@@ -73,7 +64,6 @@ EXPO_PUBLIC_API_BASE=http://127.0.0.1:9301 npx expo export --platform web
 |---|---|
 | `npm start` | Expo Dev Server |
 | `npm run web` | Web 预览 |
-| `npm run ios` | iOS（需 macOS） |
 | `npm run android` | Android |
 | `npm run export` | `expo export --platform web` |
 
