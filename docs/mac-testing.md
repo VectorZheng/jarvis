@@ -1,8 +1,8 @@
 # Mac 与 iPhone 测试步骤
 
-这份指南对应 2026-10-12 的本地代码。当前修改尚未推到 GitHub，直接克隆远端会拿到较早版本。请使用 `Jarvis-Mac-test-2026-10-12.zip`，解压后得到 `Jarvis` 文件夹。代码包不包含密钥、依赖、个人运行数据或生成的原生工程。
+**当前主验收已改走 Windows + Android Studio**，见 [android-testing.md](android-testing.md)。下文保留给仍要做 iOS 本地调试的人。
 
-如果只想安装独立运行的测试版，可直接按 [TestFlight 云端构建指南](testflight.md) 在 Windows 操作；Mac 不是云端打包的前提。下面用于本地模拟器和真机调试。
+这份指南曾对应 2026-10-12 的本地代码包；现在请直接使用仓库最新 `main`。如果只想装独立测试版，可按 [TestFlight 云端构建指南](testflight.md) 操作；Mac 不是云端打包的前提。下面用于本地 iOS 模拟器和真机调试。
 
 ## 1. 准备 Mac
 

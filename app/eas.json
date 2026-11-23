@@ -3,6 +3,15 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "development": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "JARVIS_BUILD_ENV": "development"
+      }
+    },
     "production": {
       "distribution": "store",
       "environment": "production",
