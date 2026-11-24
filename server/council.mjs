@@ -5,8 +5,10 @@
  */
 import http from "node:http";
 import { recoveryStatus, runRecovery } from "./recovery.mjs";
-import { runAssistant } from "./assistant.mjs";
-import { streamResponse } from "./recoveryTransport.mjs";
+import { createCompanionHandler } from "./companionHttp.mjs";
+import { applyCors, providerPolicy, singleHeader, providerKey } from "./providerSecurity.mjs";
+import { readBytes, strictJson, requireThat, errorResponse, fail } from "./companionProtocol.mjs";
+import { hasAssistantExtension, prepareAssistantRequest } from "./assistantExtensions.mjs";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -72,9 +74,7 @@ function saveHabit(h) {
 }
 
 function cors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Cache-Control", "no-store");
 }
 
 function json(res, code, body) {
@@ -84,21 +84,9 @@ function json(res, code, body) {
   res.end(s);
 }
 
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on("data", (c) => chunks.push(c));
-    req.on("end", () => {
-      const raw = Buffer.concat(chunks).toString("utf8");
-      if (!raw) return resolve({});
-      try {
-        resolve(JSON.parse(raw));
-      } catch (e) {
-        reject(e);
-      }
-    });
-    req.on("error", reject);
-  });
+async function readBody(req) {
+  const raw = await readBytes(req, 128 * 1024);
+  return raw.length ? strictJson(raw, 'INVALID_REQUEST') : {};
 }
 
 function normalize(body) {
@@ -255,26 +243,26 @@ function council(body, opts = {}) {
   return card;
 }
 
-const server = http.createServer(async (req, res) => {
-  cors(res);
-  if (req.method === "OPTIONS") {
-    res.writeHead(204);
-    return res.end();
-  }
-  const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
-
+const policy = providerPolicy();
+const companionHandler = createCompanionHandler({ policy });
+const server = http.createServer({ maxHeaderSize: 16 * 1024, requestTimeout: 15000, headersTimeout: 10000 }, async (req, res) => {
   try {
-    if (req.method === "POST" && ['/v1/recovery/stream', '/v1/assistant/stream'].includes(url.pathname)) {
-      const body = await readBody(req);
-      const runner = url.pathname === '/v1/assistant/stream' ? runAssistant : runRecovery;
-      return streamResponse(req, res, options => runner(body, undefined, undefined, options));
+    applyCors(req, res, policy);
+    if (await companionHandler(req, res)) return;
+    if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
+    if (singleHeader(req, 'X-Jarvis-Provider-Key') !== undefined) {
+      providerKey(req, policy);
+      throw fail('INVALID_REQUEST');
     }
+    const url = new URL(req.url || "/", "http://localhost");
     if (req.method === "GET" && url.pathname === "/v1/recovery/status") {
       return json(res, 200, recoveryStatus());
     }
     if (req.method === "POST" && url.pathname === "/v1/recovery/talk") {
-      try { return json(res, 200, await runRecovery(await readBody(req))); }
-      catch (e) { return json(res, e.status || 400, { error: "RECOVERY_ERROR", message: e.message }); }
+      const body = await readBody(req);
+      requireThat(!hasAssistantExtension(body, req), 'INVALID_REQUEST');
+      const prepared = prepareAssistantRequest(req, body, policy);
+      return json(res, 200, await runRecovery(prepared.body));
     }
     if (req.method === "GET" && url.pathname === "/health") {
       return json(res, 200, { ok: true, service: "jarvis-council", version: "0.3.0", llm: llmStatus() });
@@ -292,7 +280,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && url.pathname === "/v1/talk") {
       return runTalk(res, await readBody(req), { council }).catch((e) => {
-        try { res.write(`event: error\ndata: ${JSON.stringify({ code: "INTERNAL", message: String(e.message || e) })}\n\n`); res.end(); } catch {}
+        try { res.write(`event: error\ndata: ${JSON.stringify(errorResponse(e).error)}\n\n`); res.end(); } catch {}
       });
     }
     let m;
@@ -412,7 +400,11 @@ const server = http.createServer(async (req, res) => {
     if (e.code === "BAD_INPUT") {
       return json(res, 400, { error: "BAD_INPUT", message: e.message });
     }
-    json(res, 500, { error: "INTERNAL", message: String(e.message || e) });
+    const safe = errorResponse(e);
+    if (!res.headersSent) {
+      if (!req.complete) res.setHeader('Connection', 'close');
+      json(res, fail(safe.error.code).status, safe);
+    } else if (!res.writableEnded) res.end();
   }
 });
 
@@ -420,5 +412,5 @@ server.listen(PORT, HOST, () => {
   console.log(`jarvis-council listening on http://${HOST}:${PORT}`);
 });
 
-process.on("uncaughtException", (e) => console.error("uncaught:", e));
-process.on("unhandledRejection", (e) => console.error("unhandled:", e));
+process.on("uncaughtException", () => console.error("服务端发生未捕获异常。"));
+process.on("unhandledRejection", () => console.error("服务端发生未处理异步异常。"));

@@ -1,0 +1,10 @@
+{
+  "name": "jarvis-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "jpeg-js": "0.4.4",
+    "music-metadata": "12.7.0"
+  }
+}

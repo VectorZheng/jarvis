@@ -1,0 +1,11 @@
+export * from './contracts';
+export { createCompanionAdapter } from './adapter';
+export type { NativeCompanionModule } from './adapter';
+export { getCompanionAdapter } from './platform';
+export { LifeProjection, getLifeProjection, applyLifeChanges } from './projection';
+export type { ProjectionState } from './projection';
+export { useLifeProjection, useForeground, characterFeedback } from './hooks';
+export type { CharacterFeedback } from './hooks';
+export { CompanionFailure, errorOf, safeError, unwrap, newId } from './core';
+export type { CompanionAdapter, StringStorage, Unsubscribe } from './core';
+export { validateCommand } from './commands';

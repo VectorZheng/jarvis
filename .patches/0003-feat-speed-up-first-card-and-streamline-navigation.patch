@@ -1,0 +1,1325 @@
+From 4e3ee946f9a4102ef35faab5feb6d6bd126c2843 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E9=83=91=E6=B0=B8=E7=A5=BA?=
+ <248493347+VectorJay666@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 22:59:45 +0800
+Subject: [PATCH 3/3] feat: speed up first card and streamline navigation
+
+---
+ jarvis-app/App.tsx                            |  36 ++-
+ jarvis-app/src/components/ui.tsx              | 134 +++++++++
+ jarvis-app/src/screens/Others.tsx             | 168 +++++++++++
+ jarvis-app/src/screens/Today.tsx              | 167 +++++++++++
+ jarvis-app/src/talk/TalkScreen.tsx            |  21 +-
+ jarvis-app/src/talk/quotes.ts                 |  24 ++
+ jarvis-app/src/talk/types.ts                  |  33 +++
+ .../2026-11-19/codex-progress-3.md            |  14 +
+ review-artifacts/2026-11-19/实现回报.md       |  42 +++
+ server/llm.mjs                                | 207 +++++++++++++
+ server/talk.mjs                               | 278 ++++++++++++++++++
+ 11 files changed, 1097 insertions(+), 27 deletions(-)
+ create mode 100644 jarvis-app/src/components/ui.tsx
+ create mode 100644 jarvis-app/src/screens/Others.tsx
+ create mode 100644 jarvis-app/src/screens/Today.tsx
+ create mode 100644 jarvis-app/src/talk/quotes.ts
+ create mode 100644 jarvis-app/src/talk/types.ts
+ create mode 100644 review-artifacts/2026-11-19/codex-progress-3.md
+ create mode 100644 server/llm.mjs
+ create mode 100644 server/talk.mjs
+
+diff --git a/jarvis-app/App.tsx b/jarvis-app/App.tsx
+index 6894663..3783a64 100644
+--- a/jarvis-app/App.tsx
++++ b/jarvis-app/App.tsx
+@@ -16,7 +16,8 @@ import {
+   DEMO_DEFAULTS, type CompareResult, type CouncilStatus, type HabitRule, type HandoffCardData, type Role, type RolePreview,
+ } from './src/types';
+ 
+-type Route = { name: 'detail'; roleId: string; from: TabKey } | { name: 'hire'; from: TabKey } | null;
++type SecondaryPage = 'team' | 'habits';
++type Route = { name: 'detail'; roleId: string; from: TabKey; returnTo?: SecondaryPage } | { name: 'hire'; from: TabKey; returnTo?: 'team' } | { name: SecondaryPage; from: 'me'; returnTo?: undefined } | null;
+ 
+ function DemoScene() {
+   const insets = useSafeAreaInsets();
+@@ -46,7 +47,10 @@ function DemoScene() {
+     setRoles(ro.data); setRules(ru.data); note(ro); note(ru);
+     return ru.data;
+   }, []);
+-  useEffect(() => { refreshMeta(); }, [refreshMeta]);
++  useEffect(() => {
++    const timer = setTimeout(() => { void refreshMeta(); }, 0);
++    return () => clearTimeout(timer);
++  }, [refreshMeta]);
+ 
+   const runCouncil = useCallback(async (s: CouncilStatus, withCompare: boolean) => {
+     setLoading(true);
+@@ -76,12 +80,12 @@ function DemoScene() {
+     void left; await runCouncil(status, true);
+   };
+ 
+-  const onOpenRole = async (roleId: string) => {
+-    setRoute({ name: 'detail', roleId, from: tab });
++  const onOpenRole = async (roleId: string, returnTo?: SecondaryPage) => {
++    setRoute({ name: 'detail', roleId, from: tab, returnTo });
+     if (!compare && rules.length) { const c = await fetchCompare(status); setCompare(c.data); note(c); }
+   };
+ 
+-  const openHire = () => { setHireStep(1); setNeed(''); setPreview(null); setHireErr(null); setRoute({ name: 'hire', from: tab }); };
++  const openHire = (returnTo?: 'team') => { setHireStep(1); setNeed(''); setPreview(null); setHireErr(null); setRoute({ name: 'hire', from: tab, returnTo }); };
+ 
+   const onPreview = async () => {
+     setBusy(true); setHireErr(null); setPreview(null);
+@@ -120,8 +124,8 @@ function DemoScene() {
+       return true;
+     }
+     if (route) {
+-      setRoute(null);
+-      setFeedbackRole(null);
++      if (route.returnTo) setRoute({ name: route.returnTo, from: 'me' });
++      else { setRoute(null); setFeedbackRole(null); }
+       return true;
+     }
+     return false;
+@@ -133,29 +137,31 @@ function DemoScene() {
+     body = <RoleDetail role={roles.find((r) => r.id === route.roleId)} rules={rules.filter((r) => r.role === route.roleId)} compare={compare} onRevoke={onRevoke} />;
+   } else if (route?.name === 'hire') {
+     body = <HireFlow {...hireProps} />; footer = <HireFooter {...hireProps} />;
++  } else if (route?.name === 'team') {
++    body = <Team roles={roles} newIds={newIds} onOpen={(id) => onOpenRole(id, 'team')} onHire={() => openHire('team')} />;
++  } else if (route?.name === 'habits') {
++    body = <Habits rules={rules} roles={roles} onOpen={(id) => onOpenRole(id, 'habits')} />;
+   } else if (tab === 'today') {
+     body = <Today status={status} onChange={onStatusChange} hasBudget={hasBudget} card={card} labels={labels} learned={learned} onOpenRole={onOpenRole}
+       feedbackRole={feedbackRole} setFeedbackRole={setFeedbackRole} onFeedback={onFeedback} busy={busy} fallbackErr={fallbackErr} />;
+-    footer = <PrimaryButton testID="btn-council" label="让秘书团会商" loading={loading} onPress={onCouncil} />;
+-  } else if (tab === 'team') body = <Team roles={roles} newIds={newIds} onOpen={onOpenRole} onHire={openHire} />;
+-  else if (tab === 'habits') body = <Habits rules={rules} roles={roles} onOpen={onOpenRole} />;
+-  else body = <Me />;
++    footer = <PrimaryButton testID="btn-council" label="整理今日安排" loading={loading} onPress={onCouncil} />;
++  } else body = <Me onOpenTeam={() => setRoute({ name: 'team', from: 'me' })} onOpenHabits={() => setRoute({ name: 'habits', from: 'me' })} onOpenClassic={() => setTab('today')} />;
+ 
+-  const backLabel = route ? ({ talk: '说话', today: '今日', team: '秘书团', habits: '习惯', me: '我的' } as const)[route.from] : '';
++  const backLabel = route ? ({ talk: '助手', today: '记录', me: '我的' } as const)[route.from] : '';
+ 
+   return (
+     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']} testID="demo-scene">
+       <StatusBar style="dark" />
+       <View style={styles.col}>
+-        {route ? <NavBar title={route.name === 'hire' ? '' : '秘书详情'} backLabel={backLabel} onBack={() => setRoute(null)} /> : null}
++        {route ? <NavBar title={route.name === 'hire' ? '' : route.name === 'team' ? '角色管理' : route.name === 'habits' ? '习惯' : '角色详情'} backLabel={backLabel} onBack={() => route.returnTo ? setRoute({ name: route.returnTo, from: 'me' }) : setRoute(null)} /> : null}
+         <View style={{ flex: 1, display: !route && tab === 'talk' ? 'flex' : 'none' }}>
+-          <TalkScreen onOpenClassic={() => setTab('today')} />
++          <TalkScreen />
+         </View>
+         {route || tab !== 'talk' ? <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.scroll, footer ? { paddingBottom: 140 + insets.bottom } : null]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+           {body}
+         </ScrollView> : null}
+         {footer ? <View style={[styles.cta, route && { paddingBottom: Math.max(insets.bottom, space.sm) }]}>{footer}</View> : null}
+-        {route || tab === 'talk' ? null : <TabBar value={tab} onChange={(k) => { setTab(k); setFeedbackRole(null); }} bottom={insets.bottom} />}
++        {route ? null : <TabBar value={tab} onChange={(k) => { setTab(k); setFeedbackRole(null); }} bottom={insets.bottom} />}
+       </View>
+     </SafeAreaView>
+   );
+diff --git a/jarvis-app/src/components/ui.tsx b/jarvis-app/src/components/ui.tsx
+new file mode 100644
+index 0000000..9c091c3
+--- /dev/null
++++ b/jarvis-app/src/components/ui.tsx
+@@ -0,0 +1,134 @@
++import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
++import React from 'react';
++import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
++import { colors, radius, space, type } from '../theme/tokens';
++import { roleIcon } from '../types';
++
++export function RoleIcon({ id, size = 20, muted }: { id: string; size?: number; muted?: boolean }) {
++  return <MaterialCommunityIcons name={roleIcon(id) as never} size={size} color={muted ? colors.text3 : colors.text} />;
++}
++
++/** 唯一强调样式：仅「否决」「新上岗」使用 */
++export function StrongPill({ text, testID }: { text: string; testID?: string }) {
++  return <View style={g.strong} testID={testID}><Text style={g.strongText}>{text}</Text></View>;
++}
++
++export function Card({ children, style, testID }: { children: React.ReactNode; style?: ViewStyle; testID?: string }) {
++  return <View style={[g.card, style]} testID={testID}>{children}</View>;
++}
++
++export function Group({ title, footer, children, testID }: { title?: string; footer?: string; children: React.ReactNode; testID?: string }) {
++  return (
++    <View style={{ gap: space.sm }} testID={testID}>
++      {title ? <Text style={g.groupTitle}>{title}</Text> : null}
++      <View style={g.card}>{children}</View>
++      {footer ? <Text style={[type.caption, { marginHorizontal: 4 }]}>{footer}</Text> : null}
++    </View>
++  );
++}
++
++export function Row({ children, last, onPress, testID }: { children: React.ReactNode; last?: boolean; onPress?: () => void; testID?: string }) {
++  const inner = <View style={[g.row, !last && g.sep]}>{children}</View>;
++  if (!onPress) return inner;
++  return <Pressable testID={testID} onPress={onPress} accessibilityRole="button" style={({ pressed }) => pressed && { backgroundColor: colors.surface }}>{inner}</Pressable>;
++}
++
++export function TextBtn({ label, onPress, danger, muted, testID }: { label: string; onPress: () => void; danger?: boolean; muted?: boolean; testID?: string }) {
++  return (
++    <Pressable testID={testID} onPress={onPress} hitSlop={8} accessibilityRole="button" style={({ pressed }) => pressed && { opacity: 0.5 }}>
++      <Text style={[type.subhead, { color: danger ? colors.danger : muted ? colors.text3 : colors.text }]}>{label}</Text>
++    </Pressable>
++  );
++}
++
++export function PrimaryButton({ label, onPress, loading, disabled, testID }: { label: string; onPress: () => void; loading?: boolean; disabled?: boolean; testID?: string }) {
++  return (
++    <Pressable testID={testID} onPress={onPress} disabled={loading || disabled} accessibilityRole="button"
++      style={({ pressed }) => [g.primary, (pressed || loading || disabled) && { opacity: 0.6 }]}>
++      {loading ? <ActivityIndicator color="#fff" /> : <Text style={g.primaryText}>{label}</Text>}
++    </Pressable>
++  );
++}
++
++export function SecondaryButton({ label, onPress, testID }: { label: string; onPress: () => void; testID?: string }) {
++  return (
++    <Pressable testID={testID} onPress={onPress} accessibilityRole="button" style={({ pressed }) => [g.secondary, pressed && { opacity: 0.6 }]}>
++      <Text style={[type.body, { fontWeight: '600' }]}>{label}</Text>
++    </Pressable>
++  );
++}
++
++/** 普通可选胶囊（选中浅灰底黑字+细黑描边；黑胶囊只留给否决/新上岗） */
++export function Chip({ label, on, onPress, testID }: { label: string; on?: boolean; onPress?: () => void; testID?: string }) {
++  return (
++    <Pressable testID={testID} onPress={onPress} style={({ pressed }) => [g.chip, on && { backgroundColor: '#E5E5EA', borderWidth: 1, borderColor: '#000' }, pressed && { opacity: 0.6 }]}>
++      <Text style={[type.subhead, on && { color: '#000', fontWeight: '600' }]}>{label}</Text>
++    </Pressable>
++  );
++}
++
++export function Segmented<T extends string>({ items, value, onChange }: { items: { key: T; label: string }[]; value: T; onChange: (k: T) => void }) {
++  return (
++    <View style={g.hstack}>
++      {items.map((it) => <Chip key={it.key} label={it.label} on={it.key === value} onPress={() => onChange(it.key)} />)}
++    </View>
++  );
++}
++
++export function NavBar({ title, onBack, backLabel = '返回' }: { title: string; onBack: () => void; backLabel?: string }) {
++  return (
++    <View style={g.nav}>
++      <Pressable onPress={onBack} hitSlop={10} style={[g.hstack, { gap: 2, width: 80 }]} testID="nav-back" accessibilityRole="button">
++        <Ionicons name="chevron-back" size={22} color={colors.text} />
++        <Text style={type.body}>{backLabel}</Text>
++      </Pressable>
++      <Text style={[type.body, { fontWeight: '600' }]}>{title}</Text>
++      <View style={{ width: 80 }} />
++    </View>
++  );
++}
++
++export type TabKey = 'talk' | 'today' | 'me';
++const TABS: { key: TabKey; label: string; icon: string }[] = [
++  { key: 'talk', label: '助手', icon: 'sparkles' },
++  { key: 'today', label: '记录', icon: 'document-text' },
++  { key: 'me', label: '我的', icon: 'person' },
++];
++
++export function TabBar({ value, onChange, bottom }: { value: TabKey; onChange: (k: TabKey) => void; bottom: number }) {
++  // bottom = 底部安全区（iOS Home 指示条 / Android 10+ 手势导航条），至少留 6pt 呼吸位
++  const inset = Math.max(bottom, Platform.OS === 'android' ? 10 : 6);
++  return (
++    <View style={[g.tabbar, { paddingBottom: inset }]}>
++      {TABS.map((t) => {
++        const on = t.key === value;
++        return (
++          <Pressable key={t.key} onPress={() => onChange(t.key)} style={g.tab} testID={`tab-${t.key}`} accessibilityRole="tab" accessibilityState={{ selected: on }}>
++            <Ionicons name={(on ? t.icon : `${t.icon}-outline`) as never} size={23} color={on ? colors.text : colors.text3} />
++            <Text style={[g.tabText, { color: on ? colors.text : colors.text3 }]}>{t.label}</Text>
++          </Pressable>
++        );
++      })}
++    </View>
++  );
++}
++
++export const g = StyleSheet.create({
++  card: { backgroundColor: colors.bg, borderRadius: radius.card, borderWidth: 0.5, borderColor: colors.hairline, overflow: 'hidden' },
++  groupTitle: { ...type.subhead, color: colors.text2, marginHorizontal: 4 },
++  row: { paddingHorizontal: space.lg, paddingVertical: 12, minHeight: 44, justifyContent: 'center', gap: 3 },
++  sep: { borderBottomWidth: 0.5, borderBottomColor: colors.hairline },
++  strong: { height: 22, paddingHorizontal: 8, borderRadius: radius.pill, backgroundColor: colors.accent, justifyContent: 'center', alignSelf: 'flex-start' },
++  strongText: { fontSize: 12, fontWeight: '600', color: '#fff' },
++  primary: { height: 50, borderRadius: radius.ctl, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
++  primaryText: { fontSize: 17, fontWeight: '600', color: '#fff' },
++  secondary: { height: 50, borderRadius: radius.ctl, borderWidth: 0.5, borderColor: colors.hairline, alignItems: 'center', justifyContent: 'center' },
++  chip: { paddingHorizontal: 14, height: 32, borderRadius: radius.pill, backgroundColor: colors.surface, justifyContent: 'center' },
++  hstack: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
++  sub: { ...type.body, fontSize: 13, lineHeight: 18, color: colors.text2 },
++  input: { ...type.body, paddingVertical: 10, paddingHorizontal: 12, borderRadius: radius.ctl, backgroundColor: colors.surface },
++  nav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 44, paddingHorizontal: 8 },
++  tabbar: { flexDirection: 'row', borderTopWidth: 0.5, borderTopColor: colors.hairline, backgroundColor: colors.bg, paddingTop: 6 },
++  tab: { flex: 1, alignItems: 'center', gap: 2 },
++  tabText: { fontSize: 10, fontWeight: '500' },
++});
+diff --git a/jarvis-app/src/screens/Others.tsx b/jarvis-app/src/screens/Others.tsx
+new file mode 100644
+index 0000000..61d4d22
+--- /dev/null
++++ b/jarvis-app/src/screens/Others.tsx
+@@ -0,0 +1,168 @@
++import React from 'react';
++import { Text, TextInput, View } from 'react-native';
++import { g, Group, PrimaryButton, RoleIcon, Row, SecondaryButton, StrongPill, TextBtn } from '../components/ui';
++import { colors, space, type } from '../theme/tokens';
++import type { CompareResult, HabitRule, Role, RolePreview } from '../types';
++
++export function fmtTime(iso: string) {
++  const d = new Date(iso);
++  return isNaN(d.getTime()) ? iso : `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
++}
++
++const isPlaceholder = (r: Role) => r.status === 'placeholder';
++
++export function Team({ roles, newIds, onOpen, onHire }: { roles: Role[]; newIds: string[]; onOpen: (id: string) => void; onHire: () => void }) {
++  return (
++    <View style={{ gap: space.xl }}>
++      <Text style={type.largeTitle}>角色管理</Text>
++      <Group footer="这里管理为你提供建议的角色；灰色角色暂未启用。" testID="role-list">
++        {roles.map((r) => {
++          const ph = isPlaceholder(r);
++          return (
++            <Row key={r.id} onPress={ph ? undefined : () => onOpen(r.id)} testID={`role-${r.id}`}>
++              <View style={g.hstack}>
++                <RoleIcon id={r.id} muted={ph} />
++                <Text style={[type.body, { fontWeight: '500' }, ph && { color: colors.text3 }]}>{r.name}</Text>
++                {newIds.includes(r.id) ? <StrongPill text="新上岗" /> : null}
++                <View style={{ flex: 1 }} />
++                <Text style={[type.caption, !ph && { color: colors.text2 }]}>{ph ? '暂未启用' : `已学 ${r.learned_count} 条 ›`}</Text>
++              </View>
++              <Text style={[g.sub, { marginLeft: 28 }, ph && { color: colors.text3 }]} numberOfLines={1}>{r.duty}</Text>
++            </Row>
++          );
++        })}
++        <Row last onPress={onHire} testID="btn-hire">
++          <Text style={[type.body, { fontWeight: '600' }]}>＋ 招一个新秘书</Text>
++        </Row>
++      </Group>
++    </View>
++  );
++}
++
++function Diff({ before, after }: { before: string; after: string }) {
++  let p = 0; while (p < before.length && before[p] === after[p]) p++;
++  let s = 0; while (s < before.length - p && s < after.length - p && before[before.length - 1 - s] === after[after.length - 1 - s]) s++;
++  return <Text style={type.body}>{after.slice(0, p)}<Text style={{ fontWeight: '700' }}>{after.slice(p, after.length - s)}</Text>{after.slice(after.length - s)}</Text>;
++}
++
++export function RoleDetail({ role, rules, compare, onRevoke }: { role: Role | undefined; rules: HabitRule[]; compare: CompareResult | null; onRevoke: (id: string) => void }) {
++  if (!role) return <Text style={g.sub}>角色不存在</Text>;
++  const a = compare?.after.handoffs.find((x) => x.role === role.id);
++  const b = compare?.before.handoffs.find((x) => x.role === role.id);
++  return (
++    <View style={{ gap: space.xl }} testID="role-detail">
++      <View style={{ gap: 6 }}>
++        <View style={g.hstack}><RoleIcon id={role.id} size={28} /><Text style={type.largeTitle}>{role.name}</Text></View>
++        <Text style={g.sub}>{role.duty}</Text>
++        <Text style={type.caption}>不做：{role.not_do}</Text>
++      </View>
++      <Group title="学到的习惯" footer="习惯会在安全调整后生效；撤销后下一次整理回到原建议。" testID="habit-rules">
++        {rules.length === 0 ? <Row last><Text style={g.sub}>还没学到习惯。在今日卡上点开短签 →「不合适」告诉它原因。</Text></Row>
++          : rules.map((r, i) => (
++            <Row key={r.id} last={i === rules.length - 1}>
++              <View style={[g.hstack, { justifyContent: 'space-between' }]}>
++                <Text style={[type.body, { fontWeight: '600', flex: 1 }]}>{r.text}</Text>
++                <TextBtn danger testID={`revoke-${r.key}`} label="撤销" onPress={() => onRevoke(r.id)} />
++              </View>
++              <Text style={g.sub}>{r.because.startsWith('因为') ? r.because : `因为你上次说「${r.because}」`}</Text>
++              <Text style={type.caption}>{fmtTime(r.learned_at)}</Text>
++            </Row>
++          ))}
++      </Group>
++      <Group title="上周 vs 这周" footer="同一状态输入：上周 = 未学习时；这周 = 应用已学习惯后。" testID="compare-view">
++        {a && b && a.action !== b.action ? (
++          <>
++            <Row><Text style={type.caption}>上周</Text><Text style={[type.body, { color: colors.text3, textDecorationLine: 'line-through' }]}>{b.action}</Text></Row>
++            <Row last><Text style={type.caption}>这周</Text><Diff before={b.action} after={a.action} /></Row>
++          </>
++        ) : <Row last><Text style={g.sub}>两周建议一致（暂无生效的习惯）。</Text></Row>}
++      </Group>
++    </View>
++  );
++}
++
++export function Habits({ rules, roles, onOpen }: { rules: HabitRule[]; roles: Role[]; onOpen: (id: string) => void }) {
++  const name = (id: string) => roles.find((r) => r.id === id)?.name ?? id;
++  return (
++    <View style={{ gap: space.xl }}>
++      <Text style={type.largeTitle}>习惯</Text>
++      <Group footer="点一条进入秘书详情，可看对比、可撤销。">
++        {rules.length === 0 ? <Row last><Text style={g.sub}>还没学到习惯。</Text></Row>
++          : rules.map((r, i) => (
++            <Row key={r.id} last={i === rules.length - 1} onPress={() => onOpen(r.role)}>
++              <View style={g.hstack}><RoleIcon id={r.role} /><Text style={type.subhead}>{name(r.role)}</Text><View style={{ flex: 1 }} /><Text style={type.caption}>›</Text></View>
++              <Text style={[type.body, { marginLeft: 28 }]}>{r.text}</Text>
++            </Row>
++          ))}
++      </Group>
++    </View>
++  );
++}
++
++export function Me({ onOpenTeam, onOpenHabits, onOpenClassic }: { onOpenTeam: () => void; onOpenHabits: () => void; onOpenClassic: () => void }) {
++  return (
++    <View style={{ gap: space.xl }}>
++      <Text style={type.largeTitle}>我的</Text>
++      <Group>
++        <Row onPress={onOpenTeam} testID="tab-team"><Text style={type.body}>角色管理</Text><Text style={type.caption}>›</Text></Row>
++        <Row onPress={onOpenHabits} testID="tab-habits"><Text style={type.body}>习惯</Text><Text style={type.caption}>›</Text></Row>
++        <Row onPress={onOpenClassic} testID="open-classic"><Text style={type.body}>完整记录</Text><Text style={type.caption}>›</Text></Row>
++        <Row last><Text style={type.body}>账户与同步</Text><Text style={type.caption}>暂未开放</Text></Row>
++      </Group>
++      <Text style={[type.caption, { marginHorizontal: 4 }]}>非医疗建议；不承诺减重效果</Text>
++    </View>
++  );
++}
++
++type HireProps = {
++  step: 1 | 2 | 3; setStep: (s: 1 | 2 | 3) => void; need: string; setNeed: (n: string) => void;
++  preview: RolePreview | null; error: string | null; busy: boolean; onPreview: () => void; onConfirm: () => void;
++};
++
++export function HireFooter({ step, setStep, need, preview, error, busy, onPreview, onConfirm }: HireProps) {
++  if (step === 1) return <PrimaryButton testID="btn-hire-preview" label="预览角色" loading={busy} disabled={!need.trim()} onPress={onPreview} />;
++  if (step === 2) return preview && !error ? <PrimaryButton testID="btn-hire-next" label="下一步" onPress={() => setStep(3)} /> : <SecondaryButton label="换个需求" onPress={() => setStep(1)} />;
++  return <PrimaryButton testID="btn-hire-confirm" label="确认上岗" loading={busy} onPress={onConfirm} />;
++}
++
++/** 招新秘书：Checkout 式分步 1 说需求 → 2 预览 → 3 确认 */
++export function HireFlow({ step, need, setNeed, preview, error }: HireProps) {
++  const steps = ['说需求', '预览角色', '确认上岗'];
++  return (
++      <View style={{ gap: space.xl }} testID="hire-panel">
++      <Text style={type.largeTitle}>招一个新秘书</Text>
++      <View style={[g.hstack, { gap: 6 }]} testID="hire-steps">
++        {steps.map((t, i) => {
++        const n = i + 1; const on = n <= step;
++        return (
++          <React.Fragment key={t}>
++            <View style={{ width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? colors.text : colors.surface }}>
++              <Text style={{ fontSize: 12, fontWeight: '600', color: on ? '#fff' : colors.text3 }}>{n}</Text>
++            </View>
++            <Text style={[type.subhead, !on && { color: colors.text3 }]}>{t}</Text>
++            {n < 3 ? <View style={{ flex: 1, height: 0.5, backgroundColor: colors.hairline }} /> : null}
++          </React.Fragment>
++        );
++        })}
++      </View>
++      {step === 1 ? (
++        <Group title="一句话说你缺什么" footer="只按模板招；医疗、减重、投资类不招。">
++        <Row last><TextInput testID="hire-input" value={need} onChangeText={setNeed} placeholder="比如：这周钱紧" placeholderTextColor={colors.text3} style={g.input} /></Row>
++        </Group>
++      ) : null}
++      {step >= 2 ? (
++        <Group title={`需求：${need}`} testID="hire-preview">
++        {error ? <Row last><Text style={g.sub} testID="hire-error">{error}</Text></Row> : preview ? (
++          <>
++            <Row><View style={g.hstack}><RoleIcon id={preview.id} /><Text style={[type.body, { fontWeight: '600' }]}>{preview.name}</Text></View></Row>
++            <Row><Text style={type.caption}>职责</Text><Text style={type.body}>{preview.duty}</Text></Row>
++            <Row last={!preview.state_fields?.length}><Text style={type.caption}>不做</Text><Text style={[type.body, { fontWeight: '600' }]}>{preview.not_do}</Text></Row>
++            {preview.state_fields?.length ? <Row last><Text style={type.caption}>新增状态</Text><Text style={type.body}>{preview.state_fields.map((f) => f.label).join('、')}</Text></Row> : null}
++          </>
++        ) : null}
++        </Group>
++      ) : null}
++      {step === 3 ? <Text style={g.sub}>确认后它会出现在角色管理和记录卡片中；只提供简短建议。</Text> : null}
++    </View>
++  );
++}
+diff --git a/jarvis-app/src/screens/Today.tsx b/jarvis-app/src/screens/Today.tsx
+new file mode 100644
+index 0000000..acbd29e
+--- /dev/null
++++ b/jarvis-app/src/screens/Today.tsx
+@@ -0,0 +1,167 @@
++import React, { useState } from 'react';
++import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
++import type { Source, Sourced } from '../api/council';
++import { Card, Chip, g, RoleIcon, Segmented, StrongPill, TextBtn } from '../components/ui';
++import { colors, radius, space, type } from '../theme/tokens';
++import { FRIDGE_LABELS, type CouncilStatus, type HandoffCardData } from '../types';
++
++export function sourceText(endpoint: string, s: Source) {
++  return s === 'api' ? `来源 ${endpoint}` : s === 'fallback' ? '来源 本地兜底（接口失败）' : '来源 本地 mock（未配置 EXPO_PUBLIC_API_BASE）';
++}
++
++function Stat({ label, value, unit, step, min, max, onChange, testID }: { label: string; value: number; unit: string; step: number; min: number; max: number; onChange: (n: number) => void; testID?: string }) {
++  const set = (d: number) => onChange(Math.min(max, Math.max(min, Math.round((value + d) * 10) / 10)));
++  return (
++    <Card style={s.stat} testID={testID}>
++      <Text style={s.statLabel}>{label}</Text>
++      <Text style={type.number}>{Number.isInteger(value) ? value : value.toFixed(1)}<Text style={s.unit}> {unit}</Text></Text>
++      <View style={[g.hstack, { justifyContent: 'space-between' }]}>
++        <Pressable onPress={() => set(-step)} style={s.step} accessibilityLabel={`${label}减`}><Text style={s.stepT}>−</Text></Pressable>
++        <Pressable onPress={() => set(step)} style={s.step} accessibilityLabel={`${label}加`}><Text style={s.stepT}>+</Text></Pressable>
++      </View>
++    </Card>
++  );
++}
++
++const REASONS = ['膝盖不舒服', '太累了', '不吃蛋'];
++
++function FeedbackInline({ busy, onSubmit, onCancel }: { busy: boolean; onSubmit: (n: string) => void; onCancel: () => void }) {
++  const [note, setNote] = useState('');
++  return (
++    <View style={{ gap: space.sm, marginTop: space.sm }} testID="feedback-form">
++      <View style={[g.hstack, { flexWrap: 'wrap' }]}>
++        {REASONS.map((r) => <Chip key={r} label={r} on={note === r} onPress={() => setNote(r)} />)}
++      </View>
++      <TextInput testID="feedback-input" value={note} onChangeText={setNote} placeholder="或写一句原因" placeholderTextColor={colors.text3} style={g.input} />
++      <View style={[g.hstack, { justifyContent: 'flex-end', gap: space.lg }]}>
++        <TextBtn label="取消" muted onPress={onCancel} />
++        <TextBtn testID="btn-feedback-submit" label={busy ? '提交中…' : '提交反馈'} onPress={() => note.trim() && !busy && onSubmit(note.trim())} />
++      </View>
++    </View>
++  );
++}
++
++type Props = {
++  status: CouncilStatus;
++  onChange: (s: CouncilStatus) => void;
++  hasBudget: boolean;
++  card: Sourced<HandoffCardData> | null;
++  labels: Record<string, string>;
++  learned: { role: string; text: string } | null;
++  onOpenRole: (id: string) => void;
++  feedbackRole: string | null;
++  setFeedbackRole: (r: string | null) => void;
++  onFeedback: (note: string) => void;
++  busy: boolean;
++  fallbackErr: string | null;
++};
++
++export function Today(p: Props) {
++  const [seg, setSeg] = useState<'day' | 'week'>('day');
++  const [openRole, setOpenRole] = useState<string | null>(null);
++  const [vetoOpen, setVetoOpen] = useState(true);
++  const { status, onChange, card } = p;
++  const toggleFridge = (item: string) => onChange({ ...status, fridge: status.fridge.includes(item) ? status.fridge.filter((f) => f !== item) : [...status.fridge, item] });
++  const c = card?.data;
++
++  return (
++    <View style={{ gap: space.xl }}>
++      <View style={{ gap: space.md }}>
++        <Text style={type.largeTitle}>今日</Text>
++        <Segmented items={[{ key: 'day', label: '今日' }, { key: 'week', label: '本周' }]} value={seg} onChange={setSeg} />
++      </View>
++
++      {seg === 'week' ? (
++        <Card style={{ padding: space.lg }}><Text style={g.sub}>本周视图暂未开放；请查看当前记录。</Text></Card>
++      ) : (
++        <>
++          <View style={{ gap: space.md }} testID="status-panel">
++            <View style={[g.hstack, { gap: space.md }]}>
++              <Stat label="昨晚睡眠" value={status.sleep_hours} unit="小时" step={0.5} min={0} max={24} onChange={(n) => onChange({ ...status, sleep_hours: n })} />
++              <Stat label="今晚可用" value={status.free_minutes} unit="分钟" step={5} min={0} max={240} onChange={(n) => onChange({ ...status, free_minutes: n })} />
++            </View>
++            {p.hasBudget ? (
++              <View style={g.hstack} testID="budget-row">
++                <Stat label="本周剩余预算" value={status.budget_left ?? 300} unit="元" step={50} min={0} max={5000} onChange={(n) => onChange({ ...status, budget_left: n })} />
++              </View>
++            ) : null}
++            <View style={[g.hstack, { flexWrap: 'wrap' }]}>
++              <Text style={[s.statLabel, { marginRight: 4 }]}>冰箱里有</Text>
++              {(['egg', 'rice'] as const).map((it) => <Chip key={it} label={FRIDGE_LABELS[it] ?? it} on={status.fridge.includes(it)} onPress={() => toggleFridge(it)} />)}
++            </View>
++          </View>
++
++          {p.fallbackErr ? (
++            <View style={s.banner}><Text style={[type.subhead]}>已用本地兜底</Text><Text style={type.caption} numberOfLines={2}>{p.fallbackErr}</Text></View>
++          ) : null}
++
++          {c ? (
++            <View style={{ gap: space.sm }} testID="phase-handoff">
++              <Text style={s.statLabel}>记录 · 安排整理</Text>
++              <Card testID="handoff-card">
++                {p.learned ? (
++                  <Pressable onPress={() => p.onOpenRole(p.learned!.role)} style={[s.pad, s.sep, g.hstack]} testID="learned-tip">
++                    <Text style={[g.sub, { flex: 1 }]} numberOfLines={1}>学到：{p.learned.text}</Text>
++                    <Text style={[type.subhead]}>查看 ›</Text>
++                  </Pressable>
++                ) : null}
++                <View style={[s.pad, s.sep]}><Text style={type.headline}>{c.headline}</Text></View>
++                {c.handoffs.map((h) => {
++                  const open = openRole === h.role;
++                  return (
++                    <Pressable key={h.role} onPress={() => { setOpenRole(open ? null : h.role); if (open) p.setFeedbackRole(null); }} style={[s.pad, s.sep]} testID={`line-${h.role}`}>
++                      <View style={[g.hstack, { marginBottom: 4 }]}>
++                        <RoleIcon id={h.role} />
++                        <Text style={type.subhead}>{h.label || p.labels[h.role] || h.role}</Text>
++                        {h.is_new ? <StrongPill text="新上岗" testID={`new-${h.role}`} /> : null}
++                        <View style={{ flex: 1 }} />
++                        {open && p.feedbackRole !== h.role ? <TextBtn muted testID={`notfit-${h.role}`} label="不合适" onPress={() => p.setFeedbackRole(h.role)} /> : null}
++                      </View>
++                      <Text style={type.body}>{h.action}</Text>
++                      {p.feedbackRole === h.role ? <FeedbackInline busy={p.busy} onSubmit={p.onFeedback} onCancel={() => p.setFeedbackRole(null)} /> : null}
++                    </Pressable>
++                  );
++                })}
++                {c.sleep_window ? (
++                  <View style={[s.pad, c.vetoes_applied.length ? s.sep : null, g.hstack, { justifyContent: 'space-between' }]}>
++                    <Text style={type.body}>睡眠窗口</Text>
++                    <Text style={[type.body, { fontWeight: '600', fontVariant: ['tabular-nums'] }]}>{c.sleep_window.replace('-', '–')}</Text>
++                  </View>
++                ) : null}
++                {c.vetoes_applied.length ? (
++                  <View style={[s.pad, { gap: space.sm }]} testID="vetoes-block">
++                    {c.vetoes_applied.map((v, i) => (
++                      <Pressable key={i} onPress={() => setVetoOpen((o) => !o)} style={{ gap: 6 }}>
++                        <View style={g.hstack}>
++                          <StrongPill text="建议调整" testID="veto-pill" />
++                          <Text style={[type.subhead, { flex: 1 }]}>{p.labels[v.from] ?? v.from} → {p.labels[v.to] ?? v.to}</Text>
++                          <Text style={type.caption}>{vetoOpen ? '收起' : '展开'}</Text>
++                        </View>
++                        {vetoOpen ? <Text style={g.sub}>{v.reason}</Text> : null}
++                      </Pressable>
++                    ))}
++                  </View>
++                ) : null}
++              </Card>
++              <Text style={[type.caption, { marginHorizontal: 4 }]} testID="card-source">{c.disclaimer} · {sourceText(card!.endpoint, card!.source)}</Text>
++            </View>
++          ) : (
++            <View style={s.placeholder}><Text style={[g.sub, { textAlign: 'center' }]}>整理后，相关建议会汇总在一张卡片里</Text></View>
++          )}
++        </>
++      )}
++    </View>
++  );
++}
++
++const s = StyleSheet.create({
++  stat: { flex: 1, padding: space.lg, gap: space.sm },
++  statLabel: { ...type.subhead, color: colors.text2 },
++  unit: { fontSize: 15, fontWeight: '400', color: colors.text2 },
++  step: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
++  stepT: { fontSize: 18, fontWeight: '500', color: colors.text, lineHeight: 20 },
++  pad: { paddingHorizontal: space.lg, paddingVertical: 14 },
++  sep: { borderBottomWidth: 0.5, borderBottomColor: colors.hairline },
++  banner: { backgroundColor: colors.surface, borderRadius: radius.ctl, padding: space.md, gap: 2 },
++  placeholder: { borderRadius: radius.card, borderWidth: 0.5, borderColor: colors.hairline, borderStyle: 'dashed', padding: space.xl },
++});
+diff --git a/jarvis-app/src/talk/TalkScreen.tsx b/jarvis-app/src/talk/TalkScreen.tsx
+index 572ad25..749a0a5 100644
+--- a/jarvis-app/src/talk/TalkScreen.tsx
++++ b/jarvis-app/src/talk/TalkScreen.tsx
+@@ -73,7 +73,7 @@ function reduce(s: S, a: { type: 'submit'; text: string } | { type: 'failed' } |
+     case 'veto': {
+       const lines = s.lines.map((l) => (l.id === e.line_id || (l.phase === 'want' && l.task_id === e.task_id && l.role === e.to) ? { ...l, struck: true } : l));
+       const at = lines.findIndex((l) => l.id === e.line_id);
+-      lines.splice(at < 0 ? lines.length : at + 1, 0, note(`${e.line_id}-why`, e.reason, 'reason', e.task_id));
++      lines.splice(at < 0 ? lines.length : at + 1, 0, note(`${e.line_id}-why`, `建议调整：${e.reason}`, 'reason', e.task_id));
+       const toKey = `${e.task_id}:${e.to}`;
+       return { ...s, lines, drops: s.drops.map((d) => (d.key === toKey ? { ...d, vetoed: true } : d.task_id === e.task_id && d.role === e.from ? { ...d, pushTo: toKey } : d)) };
+     }
+@@ -127,9 +127,10 @@ function reduce(s: S, a: { type: 'submit'; text: string } | { type: 'failed' } |
+   }
+ }
+ 
+-export function TalkScreen({ onOpenClassic }: { onOpenClassic?: () => void } = {}) {
++export function TalkScreen() {
+   const [s, dispatch] = useReducer(reduce, init);
+   const [text, setText] = useState('');
++  const [inputHeight, setInputHeight] = useState(32);
+   const inputRef = useRef<TextInput>(null);
+   const [width, setWidth] = useState(390);
+   const [hint, setHint] = useState('');
+@@ -410,7 +411,7 @@ export function TalkScreen({ onOpenClassic }: { onOpenClassic?: () => void } = {
+             if (next) scrollToVeto();
+             return next;
+           })} style={st.fold}>
+-            <Text style={type.subhead}>会议纪要 · {nSay} 句 · {nVeto} 次否决</Text>
++            <Text style={type.subhead}>查看详情 · {nSay} 条 · {nVeto} 次调整</Text>
+             <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.text3} />
+           </Tap>
+         ) : null}
+@@ -424,7 +425,7 @@ export function TalkScreen({ onOpenClassic }: { onOpenClassic?: () => void } = {
+         }) : null}
+         {s.lines.length > folded.length ? <Text style={[st.section, folded.length ? { marginTop: space.md } : null]}>头头 · 主持</Text> : null}
+         {s.lines.map((l) => foldedIds.has(l.id) ? null : <MinuteLine key={l.id} l={l} />)}
+-        {visibleCards.length ? <Text style={[st.section, { marginTop: space.lg }]}>头头结论</Text> : null}
++        {visibleCards.length ? <Text style={[st.section, { marginTop: space.lg }]}>给你的建议</Text> : null}
+         {visibleCards.map((c) => <ResultCard key={c.task_id} c={c} />)}
+         {s.follow && healthSnap ? (
+           <HealthFollowPanel
+@@ -459,7 +460,8 @@ export function TalkScreen({ onOpenClassic }: { onOpenClassic?: () => void } = {
+         <View style={[st.bar, (s.phase === 'idle' || s.phase === 'listening' || s.phase === 'done') && { marginTop: 48 }, s.phase === 'asking' && st.barLit]}>
+           <Tap testID="btn-hold" feedback={false} disabled style={[st.mic, { display: 'none' }]} accessibilityLabel="语音输入暂不可用" />
+           <TextInput ref={inputRef} testID="talk-input" value={text} onChangeText={setText} placeholder={s.phase === 'asking' ? '回我一句…' : '跟我说…'} placeholderTextColor={colors.text3}
+-            style={[st.input, { outlineStyle: 'none' } as never]} editable={!running || s.phase === 'asking'} onSubmitEditing={running ? undefined : send} returnKeyType="send" />
++            multiline scrollEnabled={inputHeight >= 120} onContentSizeChange={(event) => setInputHeight(Math.max(32, Math.min(120, Math.ceil(event.nativeEvent.contentSize.height))))} blurOnSubmit={false} textAlignVertical="top"
++            style={[st.input, { height: inputHeight, outlineStyle: 'none' } as never]} editable={!running || s.phase === 'asking'} returnKeyType="default" />
+           {running ? (
+             <Tap testID="btn-stop" feedback="warning" pressOpacity={0.7} onPress={() => { stream.current?.cancel(); }} style={st.send} accessibilityLabel="停止"><View style={st.sendCircle}><View style={st.stopSq} /></View></Tap>
+           ) : (
+@@ -467,11 +469,6 @@ export function TalkScreen({ onOpenClassic }: { onOpenClassic?: () => void } = {
+           )}
+         </View>
+         <Text style={[type.caption, { textAlign: 'center', height: 16, marginBottom: 2 }]}>{hint}</Text>
+-        {onOpenClassic ? (
+-          <Tap testID="open-classic" feedback="selection" onPress={onOpenClassic} style={{ alignSelf: 'center', paddingVertical: 6, paddingBottom: 6 }}>
+-            <Text style={[type.caption, { color: colors.text3 }]}>旧版今日 ›</Text>
+-          </Tap>
+-        ) : null}
+       </View>
+       <BossSkinPicker
+         visible={skinOpen}
+@@ -614,10 +611,10 @@ const st = StyleSheet.create({
+   factUnit: { fontSize: 15, color: '#8E8E93', marginTop: 2 },
+   cardRow: { flexDirection: 'row', gap: space.sm, alignItems: 'center', paddingVertical: space.sm, borderBottomWidth: 0.5, borderBottomColor: colors.hairline },
+   learned: { ...type.subhead, marginTop: space.md },
+-  bar: { flexDirection: 'row', alignItems: 'center', marginHorizontal: space.lg, marginTop: 4, backgroundColor: colors.surface, borderRadius: radius.pill, paddingLeft: 12, paddingRight: 6, paddingVertical: 6, minHeight: 48, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.hairline },
++  bar: { flexDirection: 'row', alignItems: 'flex-end', marginHorizontal: space.lg, marginTop: 4, backgroundColor: colors.surface, borderRadius: radius.ctl, paddingLeft: 12, paddingRight: 6, paddingVertical: 6, minHeight: 56, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.hairline },
+   barLit: { backgroundColor: colors.bg, borderColor: colors.text },
+   mic: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+-  input: { flex: 1, fontSize: 16, color: colors.text, paddingVertical: 6, paddingHorizontal: 6, lineHeight: 20 },
++  input: { flex: 1, minHeight: 32, maxHeight: 120, fontSize: 16, color: colors.text, paddingTop: 6, paddingBottom: 6, paddingHorizontal: 6, lineHeight: 20 },
+   send: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginLeft: 0 },
+   sendCircle: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+   stopSq: { width: 10, height: 10, borderRadius: 2, backgroundColor: '#fff' },
+diff --git a/jarvis-app/src/talk/quotes.ts b/jarvis-app/src/talk/quotes.ts
+new file mode 100644
+index 0000000..73d7a56
+--- /dev/null
++++ b/jarvis-app/src/talk/quotes.ts
+@@ -0,0 +1,24 @@
++/** Boss idle lines under the orb — synced with skills/rules/idle_quotes.mjs (Crea 12). */
++export const BOSS_QUOTES: readonly string[] = [
++  '先听完，再动手。',
++  '少做一点，做对一点。',
++  '睡不够，别硬扛。',
++  '今天只解眼前这件。',
++  '慢，是为了走得更稳。',
++  '留一点余地给明天。',
++  '说清楚，比说得多重要。',
++  '累了就停，不算输。',
++  '把难事拆小再走。',
++  '空着，也是一种准备。',
++  '先问需不需要，再问能不能。',
++  '我会记得你刚才说的。',
++];
++
++/** Meeting-state replacement (or hide entirely). */
++export const MEETING_LINE = '正在整理你的安排';
++
++export function pickQuote(exclude?: string): string {
++  const pool = exclude ? BOSS_QUOTES.filter((q) => q !== exclude) : BOSS_QUOTES;
++  const list = pool.length ? pool : BOSS_QUOTES;
++  return list[Math.floor(Math.random() * list.length)]!;
++}
+diff --git a/jarvis-app/src/talk/types.ts b/jarvis-app/src/talk/types.ts
+new file mode 100644
+index 0000000..9e69708
+--- /dev/null
++++ b/jarvis-app/src/talk/types.ts
+@@ -0,0 +1,33 @@
++/** 事件格式以 07-后端-一句话多任务与思考流-草案.md 为准（含 boss / follow） */
++export type TalkCard = {
++  headline: string;
++  defaulted?: boolean;
++  disclaimer?: string;
++  boss_line?: string;
++  items?: { role: string; text: string }[];
++  handoffs?: { role: string; text?: string; line?: string; action?: string }[];
++  /** 卡内事实大数字（跟进/结论用，空闲首页不出现） */
++  facts?: { label: string; value: string | number; unit?: string }[];
++};
++
++type Base = { session_id: string; seq: number; ts: number };
++export type TalkEvent = Base & (
++  | { event: 'session.start'; text: string }
++  | { event: 'intent.split'; tasks: { task_id: string; intent: string; title: string }[] }
++  | { event: 'boss.ack'; line: string; roles: string[] }
++  | { event: 'role.join'; task_id: string; role: string; name: string; icon: string }
++  | { event: 'role.say'; task_id: string; role: string; line_id: string; delta: string; done: boolean; short?: string; full?: string; phase?: 'want' | 'revised' }
++  | { event: 'veto'; task_id: string; from: string; to: string; line_id: string; reason: string }
++  | { event: 'refuse'; task_id: string; title: string; reason: string; speaker?: 'boss'; boss_line?: string }
++  | { event: 'ask'; task_id: string; ask_id: string; role: string; question: string; speaker?: 'boss' }
++  | { event: 'habit.learned'; task_id: string; rule: { id: string; text: string; because: string } }
++  | { event: 'habit.applied'; task_id: string; rule_id: string; text: string }
++  | { event: 'card.ready'; task_id: string; card: TalkCard; speaker?: 'boss' }
++  | { event: 'task.done'; task_id: string; status: 'ok' | 'degraded' | 'failed' }
++  | { event: 'follow.start'; status: string; hint: string; plan: string }
++  | { event: 'follow.update'; id: string; because: string; change: string; sources?: string[] }
++  | { event: 'cancelled'; reason: string }
++  | { event: 'error'; task_id?: string; code: string; message: string }
++  | { event: 'done'; tasks_ok: number; tasks_failed: number }
++);
++export type TalkStream = { cancel: () => void; source: 'mock' | 'live' };
+diff --git a/review-artifacts/2026-11-19/codex-progress-3.md b/review-artifacts/2026-11-19/codex-progress-3.md
+new file mode 100644
+index 0000000..0e0445b
+--- /dev/null
++++ b/review-artifacts/2026-11-19/codex-progress-3.md
+@@ -0,0 +1,14 @@
++2026-11-19 T1 完成：server/talk.mjs 改为本地草稿优先，独立 SSE 验证 firstSay=36ms、firstCard=114ms、seq 连续。
++2026-11-19 T2 完成：TalkScreen 的 talk-input 启用 multiline，输入区 minHeight=32、maxHeight=120，发送按钮保持 44px；待运行中 Expo Web/真机界面验证。
++2026-11-19 T3 完成：主路径文案收敛为“正在整理你的安排 / 查看详情 / 建议调整 / 给你的建议”，旧入口移至“我的”；Web 探测主路径禁用词命中为 0。
++2026-11-19 T4 完成：一级导航收敛为 助手/记录/我的；角色管理、习惯、完整记录均从“我的”可达；Web 探测通过。
++2026-11-19 T2 验证：393×852 Expo Web 下长输入框 height=72px、scrollHeight=72px、底部=771px；已换行且未超过 120px。
++
++2026-11-19 T1 ?????runTalk ?? SSE ?????? 248/250/257ms???? 250ms?seq ?????line_id ????
++2026-11-19 T2 ?????393?852 Expo Web ?? 60 ?? talk-input=92px??120??btn-send ?????????
++2026-11-19 T3 ???????/??/?????????????? 0?
++2026-11-19 T4 ?????Expo Web ?? role=tab ?? 3???? tab-team?tab-habits?open-classic ????
++2026-11-19 T1 completed: handler SSE probe first-card 248/250/257ms; median 250ms; monotonic seq and no duplicate draft line_id.
++2026-11-19 T2 completed: 393x852 web, 60 characters gives 92px input height (max 120); btn-send remains clickable.
++2026-11-19 T3 completed: forbidden-term text probe returned 0 matches across Assistant, Records, and Me.
++2026-11-19 T4 completed: web primary role=tab count is 3; legacy secondary IDs are reachable from Me.
+diff --git a/review-artifacts/2026-11-19/实现回报.md b/review-artifacts/2026-11-19/实现回报.md
+index 21948b4..50799f3 100644
+--- a/review-artifacts/2026-11-19/实现回报.md
++++ b/review-artifacts/2026-11-19/实现回报.md
+@@ -61,3 +61,45 @@ Android 返回键关闭弹层、键盘避让与长输入、不同设备的弹层
+ - **R2-3（P1-6）— 代码已完成，运行态待验证**：修改 `server/council.mjs` 新增 `GET /v1/health/snapshot` 演示响应；`jarvis-app/src/talk/healthSnapshot.ts` 原有非 2xx 静默降级逻辑保留。由于遵守“不重启服务”，当前已运行的 9301 进程仍返回 404（`curl -i http://127.0.0.1:9301/v1/health/snapshot`），浏览器因此仍报告该 404；服务加载新代码后需复测首页控制台。
+ - **R2-4（P1-1）— 已完成**：修改 `jarvis-app/src/talk/TalkScreen.tsx`，外层触控区为 44×44px，内层视觉圆保持 30×30px。Playwright 实测按钮区域 44×44px，输入框仍可正常获取焦点。
+ - **验证命令**：`cd jarvis-app && npx tsc --noEmit` 通过；`cd jarvis-app && npx expo lint` 为 16 errors / 4 warnings，与用户提供的 16-error 基线持平，未新增。Playwright 在 393×852 浏览器视口完成上述布局复测；真实 Android 设备触控与原生滚动行为待真机验证。
++
++
++## 第三轮（2026-11-19）
++
++### T1：首卡提速
++- **完成情况：已完成（模块级验证）**
++- **改动文件：** `server/talk.mjs`
++- **实现：** 移除 `polishSay` / `polishBoss` 对首条文本与卡片输出的阻塞，改为直接发送既有 `wantLine/sayLine/revisedLine` 和本地卡片文案；保留原有按 `seq` 顺序发送机制。
++- **验证：** 独立内存 SSE 调用 `runTalk`（`pace_ms=0`）输出：首条角色文案 **36ms**、首卡 **114ms**；事件序列为 1–14 连续递增。
++- **说明：** 9301 按任务要求未重启，故未将模块验证数字表述为运行中后端实测；运行中服务重载后需按连续 3 次中位数复测 ≤2.0s。
++
++### T2：长输入多行
++- **完成情况：已完成（Expo Web 验证；真机待验证）**
++- **改动文件：** `jarvis-app/src/talk/TalkScreen.tsx`
++- **实现：** `talk-input` 启用 `multiline`，输入区 `minHeight=32`、`maxHeight=120`；底部栏改为底部对齐，`btn-send` 继续保持 44×44 命中区。
++- **验证：** 393×852 Expo Web 长文本探测：输入框高度 **72px**、`scrollHeight=72px`、底部 **771px**，满足可见换行和 ≤120px。
++- **待验证：** Android 真机键盘避让、内部滚动与发送键常驻。
++
++### T3：术语收敛
++- **完成情况：已完成（Expo Web 验证）**
++- **改动文件：** `jarvis-app/src/talk/quotes.ts`、`jarvis-app/src/talk/TalkScreen.tsx`、`jarvis-app/src/screens/Today.tsx`、`jarvis-app/src/screens/Others.tsx`、`jarvis-app/src/api/council.ts`、`jarvis-app/src/mock/buildHandoffCard.ts`、`server/v02.mjs`
++- **实现：** 将主路径改为“正在整理你的安排”“查看详情”“建议调整”“给你的建议”；将旧“今日”入口移至“我的”的“完整记录”，保留 `open-classic` testID。
++- **验证：** Expo Web 文本探测未命中“我去开会 / 会议纪要 / 否决 / 头头结论 / 旧版今日 / 二期 / 注册表”。
++
++### T4：一级入口 5→3
++- **完成情况：已完成（Expo Web 验证；Android 返回键待真机验证）**
++- **改动文件：** `jarvis-app/App.tsx`、`jarvis-app/src/components/ui.tsx`、`jarvis-app/src/screens/Others.tsx`
++- **实现：** 一级入口固定为“助手 / 记录 / 我的”；“角色管理”和“习惯”移入“我的”二级页面，复用现有 `Team`、`Habits` 组件；保留 `tab-team`、`tab-habits`、`open-classic` 可达。
++- **验证：** 393×852 Expo Web 探测到一级 tab 仅 3 个；“我的”内角色管理、习惯、完整记录均可进入；375×667 下“完整记录”可进入记录页（`btn-council` 可见）。
++- **待验证：** Android 返回键逐级返回。
++
++### 最终检查
++- `cd jarvis-app && npx tsc --noEmit`：**通过**（`TypeScript: No errors found`）。
++- `cd jarvis-app && npx expo lint`：**16 errors / 4 warnings**，未高于任务基线；错误均位于本轮未修改的 `src/talk/Drops.tsx` 与 `src/talk/HealthFollow.tsx`。
++
++## 第三轮 supplementary verification (this run)
++
++- T1: completed at handler level. Local draft role.say is emitted immediately; polishSay runs in parallel with an 800ms bound and replaces the same line_id only after the card can land. SSE probe: 248 / 250 / 257ms first-card, median 250ms; seq monotonic and draft line IDs unique. Port 9301 was not restarted as required, so its live reload remains pending verification.
++- T2: completed on Expo Web. 60 characters at 393x852 produced a 92px talk-input (maximum 120px); btn-send stayed clickable and inside the viewport. Android keyboard/internal scrolling remains pending device verification.
++- T3: completed on Expo Web. The forbidden-term text probe returned zero matches across Assistant, Records, and Me.
++- T4: completed on Expo Web. There are three primary tabs; tab-team, tab-habits, and open-classic are reachable from Me. Android back navigation remains pending device verification.
++- Final commands: cd jarvis-app && npx tsc --noEmit && npx expo lint. TypeScript passed; lint is 16 errors / 4 warnings, not above baseline.
+diff --git a/server/llm.mjs b/server/llm.mjs
+new file mode 100644
+index 0000000..a7a31fe
+--- /dev/null
++++ b/server/llm.mjs
+@@ -0,0 +1,207 @@
++/**
++ * DeepSeek (OpenAI-compatible) chat helper.
++ * Returns null when no key / timeout / HTTP error — caller must fall back to rules.
++ */
++import fs from "node:fs";
++import path from "node:path";
++import { fileURLToPath } from "node:url";
++import { assertFacts } from "../skills/rules/assert_facts.mjs";
++
++const DIR = path.dirname(fileURLToPath(import.meta.url));
++
++/** Load KEY=VAL from server/.env into process.env (does not override existing). */
++export function loadEnv(file = path.join(DIR, ".env")) {
++  try {
++    const raw = fs.readFileSync(file, "utf8");
++    for (const line of raw.split(/\r?\n/)) {
++      const s = line.trim();
++      if (!s || s.startsWith("#")) continue;
++      const i = s.indexOf("=");
++      if (i < 1) continue;
++      const k = s.slice(0, i).trim();
++      let v = s.slice(i + 1).trim();
++      if (
++        (v.startsWith('"') && v.endsWith('"')) ||
++        (v.startsWith("'") && v.endsWith("'"))
++      ) {
++        v = v.slice(1, -1);
++      }
++      if (process.env[k] === undefined) process.env[k] = v;
++    }
++  } catch {
++    /* no .env is fine */
++  }
++}
++
++loadEnv();
++
++export function llmStatus() {
++  const key = process.env.DEEPSEEK_API_KEY || "";
++  const model = process.env.DEEPSEEK_MODEL || "deepseek-flash";
++  return {
++    configured: Boolean(key && key.length > 8),
++    model,
++  };
++}
++
++/**
++ * @param {{ system?: string, user: string, json?: boolean, timeoutMs?: number }} opts
++ * @returns {Promise<string|object|null>} null on missing key / failure
++ */
++export async function chat({ system, user, json = false, timeoutMs = 12000 } = {}) {
++  const key = process.env.DEEPSEEK_API_KEY || "";
++  if (!key || key.length < 8) return null;
++
++  const base = (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/$/, "");
++  const model = process.env.DEEPSEEK_MODEL || "deepseek-flash";
++
++  const messages = [];
++  if (system) messages.push({ role: "system", content: system });
++  messages.push({ role: "user", content: String(user || "") });
++
++  const body = {
++    model,
++    messages,
++    temperature: 0.4,
++    max_tokens: Number(process.env.DEEPSEEK_MAX_TOKENS || 1024),
++  };
++  if (json) body.response_format = { type: "json_object" };
++
++  const ac = new AbortController();
++  const timer = setTimeout(() => ac.abort(), timeoutMs);
++  try {
++    const res = await fetch(`${base}/chat/completions`, {
++      method: "POST",
++      headers: {
++        "Content-Type": "application/json",
++        Authorization: `Bearer ${key}`,
++      },
++      body: JSON.stringify(body),
++      signal: ac.signal,
++    });
++    if (!res.ok) {
++      const t = await res.text().catch(() => "");
++      console.error(`[llm] HTTP ${res.status}: ${t.slice(0, 200)}`);
++      return null;
++    }
++    const data = await res.json();
++    const msg = data?.choices?.[0]?.message || {};
++    // deepseek-flash may fill reasoning_content first; final answer is content when present
++    let text = typeof msg.content === "string" ? msg.content.trim() : "";
++    if (!text && typeof msg.reasoning_content === "string") {
++      // last resort: try to pull a JSON object or last non-empty line from reasoning
++      const rc = msg.reasoning_content;
++      const jm = rc.match(/\{[\s\S]*?\}/g);
++      if (jm && jm.length) text = jm[jm.length - 1].trim();
++      else {
++        const lines = rc.split(/\n/).map((s) => s.trim()).filter(Boolean);
++        text = lines.at(-1) || "";
++      }
++    }
++    if (!text) return null;
++    if (json) {
++      try {
++        return JSON.parse(text);
++      } catch {
++        const m = text.match(/\{[\s\S]*\}/);
++        if (m) {
++          try {
++            return JSON.parse(m[0]);
++          } catch {
++            return null;
++          }
++        }
++        return null;
++      }
++    }
++    return text.trim();
++  } catch (e) {
++    console.error(`[llm] fail: ${e.name || ""} ${e.message || e}`);
++    return null;
++  } finally {
++    clearTimeout(timer);
++  }
++}
++
++/**
++ * Polish a meeting short line. Falls back to draft on any failure.
++ * @returns {Promise<{short:string, full?:string, source:"llm"|"rule"}>}
++ */
++export async function polishSay({ role, phase, draftShort, draftFull, state = {}, timeoutMs = 10000 }) {
++  const fallback = {
++    short: draftShort,
++    full: draftFull,
++    source: "rule",
++  };
++  const st = {
++    sleep_hours: state.sleep_hours,
++    free_minutes: state.free_minutes,
++    fridge: state.fridge,
++  };
++  const raw = await chat({
++    system:
++      "你是随身助手秘书团。只输出一行 JSON（不要 markdown）：" +
++      '{"short":"主张｜依据","full":"完整一句"}。' +
++      "short 必含全角｜，≤18 汉字；口语克制；不诊断、不承诺减重。" +
++      "phase=want 原主张；revised 必须以「改成」开头；say 定稿。" +
++      "只改措辞，保留分钟/睡眠/食材等事实数字。",
++    user: JSON.stringify({
++      role,
++      phase: phase || "say",
++      draft_short: draftShort,
++      draft_full: draftFull || "",
++      state: st,
++    }),
++    json: false,
++    timeoutMs,
++  });
++  if (!raw || typeof raw !== "string") return fallback;
++  let out = null;
++  try {
++    out = JSON.parse(raw);
++  } catch {
++    const m = raw.match(/\{[\s\S]*\}/);
++    if (m) {
++      try { out = JSON.parse(m[0]); } catch { out = null; }
++    }
++  }
++  if (!out || typeof out !== "object") return fallback;
++  let short = String(out.short || "").trim();
++  // allow half-width | and normalize
++  short = short.replace(/\|/, "｜");
++  if (!short || short.length > 28 || !short.includes("｜")) return fallback;
++  let full = String(out.full || draftFull || "").trim() || draftFull;
++  if (phase === "revised" && !short.startsWith("改成")) short = `改成${short}`;
++  // Crea red line: numbers/facts must survive polish
++  if (!assertFacts(draftShort, short)) return fallback;
++  if (draftFull && full && !assertFacts(draftFull, full)) {
++    full = draftFull;
++  }
++  return { short, full, source: "llm" };
++}
++
++/**
++ * One boss line; fallback to rule string.
++ */
++export async function polishBoss({ kind, draft, context = {} }) {
++  const out = await chat({
++    system:
++      "你是「头头」，用户唯一对话入口。只输出一句中文，不要引号、不要解释。" +
++      "ack：说明拉了谁开会；line：以「我帮你定了：」开头 + 结论；ask：一句追问。" +
++      "克制口语，≤28 字。",
++    user: JSON.stringify({ kind, draft, context }),
++    timeoutMs: 6000,
++  });
++  if (!out || typeof out !== "string") return { line: draft, source: "rule" };
++  let line = out.replace(/^["「]|["」]$/g, "").trim();
++  if (!line || line.length > 48) return { line: draft, source: "rule" };
++  if (kind === "line" && !/我帮你定了/.test(line)) {
++    line = draft.startsWith("我帮你定了") ? draft : `我帮你定了：${line}`;
++  }
++  if (kind === "ack" && !/拉/.test(line) && draft) {
++    // keep model line if it still reads as recruiting; else fall back
++    if (!/开会|来开|拉上|叫上/.test(line)) return { line: draft, source: "rule" };
++  }
++  if (draft && !assertFacts(draft, line)) return { line: draft, source: "rule" };
++  return { line, source: "llm" };
++}
+diff --git a/server/talk.mjs b/server/talk.mjs
+new file mode 100644
+index 0000000..3d84a31
+--- /dev/null
++++ b/server/talk.mjs
+@@ -0,0 +1,278 @@
++/**
++ * v0.3-draft: POST /v1/talk (SSE) — one sentence → tasks → per-task council stream.
++ * Splitter: uses ../skills/rules/split.mjs if present (export splitText), else fallback below.
++ */
++import { randomUUID } from "node:crypto";
++import fs from "node:fs";
++import path from "node:path";
++import { fileURLToPath } from "node:url";
++import { wantLine, sayLine, revisedLine } from "../skills/rules/lines.mjs";
++import { proposeFollow } from "../skills/rules/follow.mjs";
++import { bossAck, bossAsk, bossLine } from "../skills/rules/boss.mjs";
++import { polishSay } from "./llm.mjs";
++
++const DIR = path.dirname(fileURLToPath(import.meta.url));
++const SPLIT_PATH = path.join(DIR, "../skills/rules/split.mjs");
++
++const ICON = { fitness: "dumbbell", diet: "bowl", recovery: "moon", ledger: "wallet" };
++const NAME = { fitness: "健身教练", diet: "饮食顾问", recovery: "作息/恢复管家", ledger: "记账秘书" };
++const KW = [
++  ["fitness", /练|跑|健身|运动|累|锻炼/],
++  ["diet", /吃|冰箱|饭|做啥|晚餐|午餐/],
++  ["recovery", /睡|熬夜|作息|休息/],
++  ["ledger", /钱|预算|花|记账|省/],
++];
++const FORBID = /诊断|药|减重|减肥\d|炒股|理财|投资|贷款/;
++
++function fallbackSplit(text) {
++  const segs = text.split(/然后|顺便|还有|另外|，|,|。|；|;/).map((s) => s.trim()).filter(Boolean);
++  const tasks = [];
++  for (const s of segs) {
++    if (FORBID.test(s)) { tasks.push({ intent: "refuse", title: s, reason: "这类事秘书团不做（医疗/减重/投资）" }); continue; }
++    const hit = KW.find(([, re]) => re.test(s));
++    tasks.push(hit ? { intent: hit[0], title: s } : { intent: "unknown", title: s });
++  }
++  return tasks;
++}
++
++async function getSplitter() {
++  if (fs.existsSync(SPLIT_PATH)) {
++    try {
++      const m = await import(SPLIT_PATH + "?t=" + fs.statSync(SPLIT_PATH).mtimeMs);
++      if (typeof m.splitText === "function") return m.splitText;
++    } catch (e) { console.error("split.mjs load failed, fallback:", e.message); }
++  }
++  return fallbackSplit;
++}
++
++
++function taskHeadline(intent, card, st) {
++  const h = (r) => card?.handoffs.find((x) => x.role === r)?.action || "";
++  if (intent === "fitness") {
++    const a = h("fitness");
++    const m = Number((a.match(/(\d+)\s*分钟/) || [])[1]);
++    return `今晚只做${Number.isFinite(m) ? m : ""}分钟${/低冲击|拉伸|踏步/.test(a) ? "低冲击" : "训练"}`;
++  }
++  if (intent === "diet") return /蛋炒饭/.test(h("diet")) ? "冰箱蛋米，一碗蛋炒饭" : "用冰箱现有食材吃一顿";
++  if (intent === "ledger") { const left = Number(st.budget_left); return Number.isFinite(left) ? `这顿0元，本周还剩${left}` : "先报本周剩余预算"; }
++  if (intent === "recovery") return "今晚早点进房";
++  return card?.headline || "";
++}
++
++const sessions = new Map(); // id -> {events:[], cancelled, pendingAsk:{ask_id, resolve}}
++
++export function getSession(id) { return sessions.get(id); }
++
++export function cancelSession(id) {
++  const s = sessions.get(id);
++  if (!s) return false;
++  s.cancelled = true;
++  s.pendingAsk?.resolve(null);
++  return true;
++}
++
++export function replySession(id, ask_id, text) {
++  const s = sessions.get(id);
++  if (!s?.pendingAsk || s.pendingAsk.ask_id !== ask_id) return false;
++  s.pendingAsk.resolve(String(text || ""));
++  return true;
++}
++
++const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
++
++/**
++ * @param res  http response (SSE)
++ * @param body {text, state?, session_id?}
++ * @param deps {council}  council(body,{dryRun}) → card
++ */
++export async function runTalk(res, body, deps) {
++  const session_id = body.session_id || randomUUID();
++  const s = { events: [], cancelled: false, seq: 0 };
++  sessions.set(session_id, s);
++  res.writeHead(200, {
++    "Content-Type": "text/event-stream; charset=utf-8",
++    "Cache-Control": "no-cache",
++    Connection: "keep-alive",
++    "Access-Control-Allow-Origin": "*",
++  });
++  let closed = false;
++  res.on("close", () => { closed = true; s.cancelled = true; s.pendingAsk?.resolve(null); });
++
++  const pace = Number(body.pace_ms ?? 120);
++  const emit = (event, data) => {
++    if (closed) return;
++    const ev = { session_id, seq: ++s.seq, ts: new Date().toISOString(), ...data };
++    s.events.push({ event, data: ev });
++    res.write(`event: ${event}\ndata: ${JSON.stringify(ev)}\n\n`);
++  };
++  const stop = () => {
++    if (s.cancelled && !s.sentCancel) { s.sentCancel = true; emit("cancelled", { reason: "user" }); res.end(); }
++    return s.cancelled;
++  };
++
++  const text = String(body.text || "").trim();
++  emit("session.start", { text });
++  if (!text) { emit("error", { code: "BAD_INPUT", message: "text required" }); emit("done", { tasks_ok: 0, tasks_failed: 0 }); return res.end(); }
++
++  const split = await getSplitter();
++  const raw = split(text).map((t) => ({ task_id: randomUUID().slice(0, 8), ...t }));
++  emit("intent.split", { tasks: raw.map(({ task_id, intent, title }) => ({ task_id, intent, title })) });
++  const liveForAck = raw.filter((t) => ["fitness", "diet", "recovery", "ledger"].includes(t.intent));
++  const ackRoles = [...new Set(liveForAck.flatMap((t) => (t.intent === "fitness" ? ["fitness", "recovery"] : [t.intent])))];
++  {
++    const draftAck = bossAck(ackRoles);
++    // 首句必须先到：不能等待外部润色服务。
++    emit("boss.ack", { line: draftAck, roles: ackRoles, speaker: "boss", source: "local_draft" });
++  }
++  await sleep(pace);
++
++  // state: client state, else ask once (demo default on timeout/no answer)
++  let state = body.state;
++  const needsCouncil = raw.some((t) => ["fitness", "diet", "recovery", "ledger"].includes(t.intent));
++  if (needsCouncil && !state) {
++    const ask_id = randomUUID().slice(0, 8);
++    emit("ask", { task_id: raw[0].task_id, ask_id, role: "recovery", speaker: "boss", question: bossAsk("sleep") });
++    const answer = await new Promise((resolve) => {
++      s.pendingAsk = { ask_id, resolve };
++      setTimeout(() => resolve(null), Number(body.ask_timeout_ms ?? 8000));
++    });
++    s.pendingAsk = null;
++    if (stop()) return;
++    const sleepH = Number((answer || "").match(/(\d+(?:\.\d+)?)\s*(小时|h|个钟)/)?.[1]);
++    const mins = Number((answer || "").match(/(\d+)\s*(分钟|min)/)?.[1]);
++    state = {
++      sleep_hours: Number.isFinite(sleepH) ? sleepH : 5,
++      free_minutes: Number.isFinite(mins) ? mins : 40,
++      fridge: ["egg", "rice"],
++      _defaulted: !answer,
++    };
++  }
++
++  let card = null;
++  if (needsCouncil) {
++    const b = { ...state };
++    if (raw.some((t) => t.intent === "ledger") && b.budget_left === undefined) b.budget_left = state.budget_left;
++    try {
++      card = deps.council(b, { dryRun: true, forceRoles: raw.map((t) => t.intent) });
++    } catch (e) {
++      emit("error", { code: "BAD_STATE", message: `状态字段不全或写错（${e.message}），按保守默认值继续` });
++      state = { sleep_hours: 5, free_minutes: 40, fridge: ["egg", "rice"], budget_left: b.budget_left, _defaulted: true };
++      try { card = deps.council({ ...state }, { dryRun: true, forceRoles: raw.map((t) => t.intent) }); }
++      catch (e2) { emit("error", { code: "INTERNAL", message: String(e2.message || e2) }); emit("done", { tasks_ok: 0, tasks_failed: raw.length }); return res.end(); }
++    }
++  }
++
++  let ok = 0, failed = 0;
++  // 润色只是后发­优化：本地草稿先进流，永不卡住第一句或首张卡。
++  const polishJobs = [];
++  const rolesOf = (t) => (t.intent === "fitness" ? ["fitness", "recovery"] : [t.intent]);
++  const live = raw.filter((t) => ["fitness", "diet", "recovery", "ledger"].includes(t.intent));
++  // phase 1: every role.join first, so the split shows all droplets at once
++  for (const t of live) for (const r of rolesOf(t)) emit("role.join", { task_id: t.task_id, role: r, name: NAME[r], icon: ICON[r] });
++  await sleep(pace);
++  for (const t of raw) {
++    if (stop()) return;
++    if (t.intent === "refuse") {
++      emit("refuse", { task_id: t.task_id, title: t.title, reason: t.reason || "这类事秘书团不做" });
++      emit("task.done", { task_id: t.task_id, status: "failed" }); failed++; continue;
++    }
++    if (t.intent === "unknown") {
++      emit("ask", { task_id: t.task_id, ask_id: randomUUID().slice(0, 8), role: "system", speaker: "boss", question: bossAsk("clarify", { hint: t.title }) });
++      emit("task.done", { task_id: t.task_id, status: "degraded" }); failed++; continue;
++    }
++    const roles = rolesOf(t);
++    const lines = {};
++    const taskVetoes = (card?.vetoes_applied || []).filter((v) => roles.includes(v.to) && roles.includes(v.from));
++    const vetoTargets = new Set(taskVetoes.map((v) => v.to));
++    const say = (role, short, full, marked, source) => {
++      if (stop()) return null;
++      const line_id = randomUUID().slice(0, 8);
++      lines[role] = line_id;
++      // 首版本地草稿一次发出：不让分片 pace 拖慢卡片落地。
++      emit("role.say", { task_id: t.task_id, role, line_id, delta: short, done: true, short, full, phase: marked, source: source || "local_draft" });
++      if (full) {
++        const draftShort = short;
++        const draftFull = full;
++        const phase = marked;
++        // 同一 line_id 的 done 事件会被客户端原位替换；最长 800ms，超时保留草稿。
++        polishJobs.push(polishSay({ role, phase: phase || "say", draftShort, draftFull, state, timeoutMs: 800 })
++          .then((polished) => {
++            if (s.cancelled || polished?.source !== "llm" || polished.short === draftShort) return;
++            emit("role.say", {
++              task_id: t.task_id, role, line_id,
++              delta: polished.short, done: true, short: polished.short,
++              full: polished.full || draftFull, phase, source: "llm_revision",
++            });
++          })
++          .catch(() => {}));
++      }
++      return line_id;
++    };
++    // 1) 原主张（会被否决的角色先说「想要」版，避免划掉的就是结论）
++    for (const r of roles) {
++      if (!vetoTargets.has(r)) continue;
++      const want = wantLine(r, state);
++      if (!want) continue;
++      await say(r, want.short, want.full, "want", "local_draft");
++    }
++    // 2) 其他角色正常说（含 recovery）
++    for (const r of roles) {
++      if (vetoTargets.has(r)) continue;
++      const h = card?.handoffs.find((x) => x.role === r);
++      if (!h) continue;
++      const draft = sayLine(r, h.action, state);
++      await say(r, draft, h.action, null, "local_draft");
++    }
++    // 3) 否决：划掉「想要」那一行
++    for (const v of taskVetoes) {
++      emit("veto", { task_id: t.task_id, from: v.from, to: v.to, line_id: lines[v.to] || null, reason: `${NAME[v.from]}拦了${NAME[v.to]}：${v.reason}` });
++      await sleep(pace);
++    }
++    // 4) 被否决的角色再冒改过的一句（对齐卡片标题）
++    for (const v of taskVetoes) {
++      const h = card?.handoffs.find((x) => x.role === v.to);
++      if (!h) continue;
++      const draft = revisedLine(v.to, h.action, state);
++      await say(v.to, draft, h.action, "revised", "local_draft");
++    }
++    for (const a of card?.learned_applied || []) {
++      if (roles.includes(a.role)) emit("habit.applied", { task_id: t.task_id, rule_id: a.id, text: `按你的习惯改了：${a.text}` });
++    }
++    const sub = card ? { ...card, headline: taskHeadline(t.intent, card, state), handoffs: card.handoffs.filter((h) => roles.includes(h.role)), vetoes_applied: card.vetoes_applied.filter((v) => roles.includes(v.to)) } : null;
++    if (state?._defaulted && sub) { sub.defaulted = true; sub.disclaimer += "；用了默认值"; }
++    if (sub) {
++      sub.speaker = "boss";
++      sub.boss_line = bossLine(sub.headline);
++      sub.boss_line_source = "local_draft";
++    }
++    emit("card.ready", { task_id: t.task_id, card: sub, speaker: "boss" });
++    emit("task.done", { task_id: t.task_id, status: state?._defaulted ? "degraded" : "ok" });
++    ok++;
++    await sleep(pace);
++  }
++  if (stop()) return;
++  if (ok > 0) {
++    emit("follow.start", { status: "watching", hint: "跟进中", plan: "会后按睡眠/完成情况自动改下一版", speaker: "boss" });
++    const follow = proposeFollow(state || {}, card || {});
++    if (follow?.updates?.length) {
++      for (const u of follow.updates) {
++        const parts = String(u.text || "").split("→").map((s) => s.trim());
++        emit("follow.update", {
++          id: u.id || randomUUID().slice(0, 8),
++          speaker: "boss",
++          because: parts[0] || u.because,
++          change: parts[1] || u.text,
++          text: u.text,
++          patch: u.patch || null,
++          sources: ["council", "follow.mjs"],
++        });
++      }
++    }
++  }
++  // 卡片已经落地后再等最多 800ms 的润色回填，不影响首卡。
++  await Promise.allSettled(polishJobs);
++  if (stop()) return;
++  emit("done", { tasks_ok: ok, tasks_failed: failed });
++  res.end();
++  setTimeout(() => sessions.delete(session_id), 10 * 60 * 1000);
++}
+-- 
+2.56.0.windows.4.niugit
+

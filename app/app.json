@@ -24,7 +24,9 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.jarvis.secretary"
+      "package": "com.jarvis.secretary",
+      "allowBackup": false,
+      "blockedPermissions": ["android.permission.ACCESS_BACKGROUND_LOCATION", "android.permission.FOREGROUND_SERVICE_LOCATION", "android.permission.FOREGROUND_SERVICE_MICROPHONE"]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -32,7 +34,11 @@
     },
     "plugins": [
       "expo-asset",
-      ["expo-audio", { "microphonePermission": "录制你的语音，供你试听或稍后使用。", "enableBackgroundPlayback": false }],
+      ["expo-secure-store", { "configureAndroidBackup": false }],
+      ["expo-location", { "locationWhenInUsePermission": "仅在你主动记录位置时获取一次位置。", "locationAlwaysAndWhenInUsePermission": false, "locationAlwaysPermission": false, "motionUsagePermission": false, "isIosBackgroundLocationEnabled": false, "isAndroidBackgroundLocationEnabled": false, "isAndroidForegroundServiceEnabled": false, "isAndroidMotionActivityEnabled": false }],
+      ["expo-dev-client", { "launchMode": "most-recent" }],
+      "./plugins/withCompanion",
+      ["expo-audio", { "microphonePermission": "仅在前台按下录音时录制语音，转写后由你确认发送。", "enableBackgroundPlayback": false, "enableBackgroundRecording": false }],
       [
         "expo-image-picker",
         {

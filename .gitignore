@@ -40,3 +40,15 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# 本机产物与临时目录（2026-11-24 整理，避免把浏览器 profile / 构建缓存 / 旧版归档推上远端）
+.preview/
+.qoder/
+.vscode/
+archive/
+review-tools/node_modules/
+review-tools/npm-cache/
+review-tools/temp/
+bugreport-*.zip
+server/health.json
+app/modules/**/android/build/

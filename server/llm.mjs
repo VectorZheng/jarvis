@@ -34,8 +34,7 @@ export function loadEnv(file = path.join(DIR, ".env")) {
   }
 }
 
-loadEnv();
-
+// 启动入口显式加载服务端配置；导入纯业务/测试模块不会读取磁盘凭据。
 export function llmStatus() {
   const key = process.env.DEEPSEEK_API_KEY || "";
   const model = process.env.DEEPSEEK_MODEL || "deepseek-flash";
@@ -75,6 +74,7 @@ export async function chat({ system, user, json = false, timeoutMs = 12000, requ
   try {
     const res = await fetch(`${base}/chat/completions`, {
       method: "POST",
+      redirect: "error",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${key}`,
@@ -83,8 +83,7 @@ export async function chat({ system, user, json = false, timeoutMs = 12000, requ
       signal: signal ? AbortSignal.any([ac.signal, signal]) : ac.signal,
     });
     if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      console.error(`[llm] HTTP ${res.status}: ${t.slice(0, 200)}`);
+      await res.body?.cancel().catch(() => {});
       return null;
     }
     let msg;
@@ -141,8 +140,7 @@ export async function chat({ system, user, json = false, timeoutMs = 12000, requ
       }
     }
     return text.trim();
-  } catch (e) {
-    console.error(`[llm] fail: ${e.name || ""} ${e.message || e}`);
+  } catch {
     return null;
   } finally {
     clearTimeout(timer);

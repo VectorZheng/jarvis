@@ -86,6 +86,8 @@ export async function saveHealthSnapshot(snap: HealthSnapshot): Promise<HealthSn
 /** POST /v1/health/snapshot when API_BASE set; failures silent */
 export async function postHealthSnapshot(snap: HealthSnapshot): Promise<boolean> {
   if (!API_BASE) return false;
+  // 演示种子不得默认上云或以 replace 全量覆盖真实健康库（见冻结契约 contracts 边界说明）。
+  if (snap.source === 'mock') return false;
   try {
     const res = await fetch(`${API_BASE}/v1/health/snapshot`, {
       method: 'POST',
@@ -181,15 +183,16 @@ export function blocksFromSnapshot(st: HealthSnapshot): HealthBlock[] {
 
 /** Merge snapshot into talk state — having sleep_hours lets backend skip ask */
 export function talkStateFromSnapshot(snap: HealthSnapshot): Record<string, unknown> {
+  // 仅透传真实存在的指标：缺失即缺省，绝不用演示冰箱/预算/空闲回填，避免污染真实聊天请求上下文。
   return {
     sleep_hours: snap.sleep_hours,
     steps: snap.steps,
     active_kcal: snap.active_kcal,
     training_done: snap.training_done,
     meals_today: snap.meals_today,
-    fridge: snap.fridge ?? ['egg', 'rice'],
-    budget_left: snap.budget_left ?? 300,
-    free_minutes: snap.free_minutes ?? 40,
+    fridge: snap.fridge,
+    budget_left: snap.budget_left,
+    free_minutes: snap.free_minutes,
   };
 }
 

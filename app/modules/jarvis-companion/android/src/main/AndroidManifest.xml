@@ -1,0 +1,18 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <application>
+    <activity android:name="expo.modules.jarviscompanion.AuthorizationActivity" android:exported="false" android:excludeFromRecents="true" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:resizeableActivity="true" />
+    <service android:name="expo.modules.jarviscompanion.CompanionService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="specialUse">
+      <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-started draggable companion overlay with a persistent notification and explicit stop action; no microphone or location capture." />
+    </service>
+    <service android:name="expo.modules.jarviscompanion.ObservationService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="mediaProjection" />
+    <receiver android:name="expo.modules.jarviscompanion.StopReceiver" android:exported="false" />
+    <receiver android:name="expo.modules.jarviscompanion.TimerReceiver" android:exported="false" />
+  </application>
+</manifest>

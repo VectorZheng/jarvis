@@ -1,7 +1,7 @@
 import { BlurTargetView } from 'expo-blur';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, ScrollView, StyleSheet, View } from 'react-native';
+import { Keyboard, Modal, ScrollView, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -12,6 +12,7 @@ import { tabBarInset, useTabIndicator } from './src/components/TabBar';
 import { NavBar, PrimaryButton, TabBar, type TabKey } from './src/components/ui';
 import { Habits, HireFlow, HireFooter, Me, RoleDetail, Team } from './src/screens/Others';
 import { Today } from './src/screens/Today';
+import { CompanionScreen } from './src/screens/CompanionScreen';
 import { AgentScreen } from './src/agent/AgentScreen';
 import { ScreenArrival } from './src/components/ScreenArrival';
 import { colors, space } from './src/theme/tokens';
@@ -19,7 +20,7 @@ import {
   DEMO_DEFAULTS, type CompareResult, type CouncilStatus, type HabitRule, type HandoffCardData, type Role, type RolePreview,
 } from './src/types';
 
-type Route = { name: 'detail'; roleId: string; from: TabKey } | { name: 'hire'; from: TabKey } | null;
+type Route = { name: 'detail'; roleId: string; from: TabKey } | { name: 'hire'; from: TabKey } | { name: 'companion'; from: TabKey } | null;
 
 function DemoScene() {
   const insets = useSafeAreaInsets();
@@ -132,7 +133,7 @@ function DemoScene() {
     footer = <PrimaryButton testID="btn-council" label="让秘书团会商" loading={loading} onPress={onCouncil} />;
   } else if (tab === 'team') body = <Team roles={roles} newIds={newIds} onOpen={onOpenRole} onHire={openHire} />;
   else if (tab === 'habits') body = <Habits rules={rules} roles={roles} onOpen={onOpenRole} />;
-  else body = <Me />;
+  else body = <Me onOpenCompanion={() => setRoute({ name: 'companion', from: tab })} />;
 
   const backLabel = route ? ({ talk: '开始', today: '今日', team: '跟进', habits: '习惯', me: '我的' } as const)[route.from] : '';
 
@@ -163,6 +164,13 @@ function DemoScene() {
         {footer ? <View style={[styles.cta, { bottom: route ? 0 : navigationInset, paddingBottom: route ? Math.max(insets.bottom, space.sm) : space.sm }]}>{footer}</View> : null}
         <View style={[StyleSheet.absoluteFill, { display: !route && tab !== 'talk' ? 'flex' : 'none' }]} pointerEvents="box-none"><TabBar active={!route && tab !== 'talk'} indicator={indicator} blurTarget={blurTarget} value={tab} onChange={navigate} bottom={insets.bottom} /></View>
       </View>
+      <Modal visible={route?.name === 'companion'} animationType="slide" onRequestClose={() => setRoute(null)}>
+        <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+          <StatusBar style="dark" />
+          <NavBar title="陪伴与观察" backLabel={route ? ({ talk: '开始', today: '今日', team: '跟进', habits: '习惯', me: '我的' } as const)[route.from] : '返回'} onBack={() => setRoute(null)} />
+          <CompanionScreen visible />
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }

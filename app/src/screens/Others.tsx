@@ -115,10 +115,13 @@ export function Habits({ rules, roles, onOpen }: { rules: HabitRule[]; roles: Ro
   );
 }
 
-export function Me() {
+export function Me({ onOpenCompanion }: { onOpenCompanion?: () => void }) {
   return (
     <View style={{ gap: space.xl }}>
       <ContentArrival delay={0}><Text style={type.largeTitle}>我的</Text></ContentArrival>
+      <Group title="陪伴与观察">
+        <ContentArrival delay={80}><Row last onPress={onOpenCompanion} testID="open-companion"><Text style={type.body}>连接授权 · 生活记录 · 记忆 · 语音</Text><Text style={type.caption}>›</Text></Row></ContentArrival>
+      </Group>
       <Group>
         <ContentArrival delay={120}><Row><Text style={type.body}>账户与同步</Text><Text style={type.caption}>二期</Text></Row></ContentArrival>
         <ContentArrival delay={220}><Row last><Text style={type.body}>关于随身助手</Text><Text style={type.caption}>会扩编、会进化的秘书团</Text></Row></ContentArrival>

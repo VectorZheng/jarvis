@@ -1,0 +1,75 @@
+{
+  "checkedAt": "2026-10-11",
+  "method": "Primary-site HTTP fetch and GitHub repository API; web search returned no usable output",
+  "results": [
+    {
+      "status": "fulfilled",
+      "value": {
+        "url": "https://developer.apple.com/design/human-interface-guidelines/motion",
+        "status": 200,
+        "title": "Motion | Apple Developer Documentation",
+        "spring": false,
+        "reduceMotion": false,
+        "bodyLength": 17808
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "url": "https://developer.apple.com/design/human-interface-guidelines/buttons",
+        "status": 200,
+        "title": "Buttons | Apple Developer Documentation",
+        "spring": false,
+        "reduceMotion": false,
+        "bodyLength": 17455
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "url": "https://developer.apple.com/videos/play/wwdc2023/10158/",
+        "status": 200,
+        "title": "Animate with springs - WWDC23 - Videos - Apple Developer",
+        "spring": true,
+        "reduceMotion": false,
+        "bodyLength": 165238
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "url": "https://api.github.com/repos/EmergeTools/Pow",
+        "status": 200,
+        "name": "EmergeTools/Pow",
+        "description": "Delightful SwiftUI effects for your app",
+        "license": "MIT",
+        "archived": false,
+        "html_url": "https://github.com/EmergeTools/Pow"
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "url": "https://api.github.com/repos/GetStream/swiftui-spring-animations",
+        "status": 200,
+        "name": "GetStream/swiftui-spring-animations",
+        "description": "This repository serves as your reference and complete guide for SwiftUI Spring Animations. It demonstrates use cases for the various types of spring animations and spring parameters. No more guessing the values of the parameters for spring animations you create for your next iOS app. ",
+        "license": "GPL-3.0",
+        "archived": false,
+        "html_url": "https://github.com/GetStream/swiftui-spring-animations"
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "url": "https://api.github.com/repos/software-mansion/react-native-reanimated",
+        "status": 200,
+        "name": "software-mansion/react-native-reanimated",
+        "description": "React Native's Animated library reimplemented",
+        "license": "MIT",
+        "archived": false,
+        "html_url": "https://github.com/software-mansion/react-native-reanimated"
+      }
+    }
+  ]
+}
